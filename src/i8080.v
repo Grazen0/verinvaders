@@ -12,6 +12,9 @@
 `define A_SRC_ALU 1'b0
 `define A_SRC_BUS 1'b1
 
+`define ACT_SRC_A 1'b0
+`define ACT_SRC_BUS 1'b1
+
 `define RP_SEL_BC 3'b000
 `define RP_SEL_DE 3'b001
 `define RP_SEL_HL 3'b010
@@ -92,11 +95,12 @@ module control (
     input wire is_xchg,
     input wire is_alu_reg,
     input wire is_alu_imm,
+    input wire is_alu_alt,
     input wire is_inr,
     input wire is_dcr,
     input wire is_inx,
     input wire is_dcx,
-    input wire is_alu_alt,
+    input wire is_dad,
     input wire is_nop,
 
     input  wire ready,
@@ -107,6 +111,7 @@ module control (
     output reg write_data_out,
 
     output reg a_src,
+    output reg act_src,
     output reg flags_src,
 
     output wire write,
@@ -180,6 +185,7 @@ module control (
     write_data_out  = 0;
 
     a_src           = `A_SRC_BUS;
+    act_src         = `ACT_SRC_A;
     flags_src       = `FLAGS_SRC_ALU;
 
     reg_sel         = 4'bxxxx;
@@ -310,6 +316,15 @@ module control (
           write_adr = 1;
         end
 
+        if (is_alu_alt) begin
+            alu_control = {2'b01, alu_op};
+            a_src       = `A_SRC_ALU;
+            write_a     = 1;
+            write_flags = 1;
+
+            instr_end = 1;
+        end
+
         if (is_inr || is_dcr) begin
           if (is_ddd_mem) begin
             reg_sel    = {`RP_SEL_HL, 1'bx};
@@ -333,13 +348,14 @@ module control (
           dec_rp  = 1;
         end
 
-        if (is_alu_alt) begin
-            alu_control = {2'b01, alu_op};
-            a_src       = `A_SRC_ALU;
-            write_a     = 1;
-            write_flags = 1;
+        if (is_dad) begin
+          reg_sel = {rp_ext, `RP_LO};
+          read_regs = 1;
 
-            instr_end = 1;
+          act_src = `ACT_SRC_BUS;
+          write_act = 1;
+
+          mcycle_end = 1;
         end
       end
       {M1, T5}: begin
@@ -366,6 +382,12 @@ module control (
         if (is_stax) begin
           read_a = 1;
           write_data_out = 1;
+        end
+
+        if (is_dad) begin
+          reg_sel   = `REG_SEL_L;
+          read_regs = 1;
+          write_tmp = 1;
         end
       end
 
@@ -419,6 +441,15 @@ module control (
           data_in_enable = 1;
           write_tmp      = 1;
         end
+
+        if (is_dad) begin
+          alu_control = 5'b11000;
+          read_alu   = 1;
+
+          reg_sel     = `REG_SEL_L;
+          write_regs  = 1;
+          write_flags = 1;
+        end
       end
 
       {M2, T3}: begin
@@ -455,6 +486,14 @@ module control (
           reg_sel = {`RP_SEL_HL, 1'bx};
           write_adr = 1;
         end
+
+        if (is_dad) begin
+          reg_sel = {rp_ext, `RP_HI};
+          read_regs = 1;
+
+          act_src = `ACT_SRC_BUS;
+          write_act = 1;
+        end
       end
 
       {M3, T1}: begin
@@ -474,6 +513,12 @@ module control (
           write_flags = 1;
           write_data_out = 1;
         end
+
+        if (is_dad) begin
+          reg_sel   = `REG_SEL_H;
+          read_regs = 1;
+          write_tmp = 1;
+        end
       end
       {M3, T2}: begin
         if (is_mvi || is_inr || is_dcr) begin
@@ -490,6 +535,15 @@ module control (
           data_in_enable = 1;
           write_regs     = 1;
           reg_sel        = `REG_SEL_W;
+        end
+
+        if (is_dad) begin
+          alu_control = 5'b11001; // TODO: add name to this
+          read_alu   = 1;
+
+          reg_sel     = `REG_SEL_H;
+          write_regs  = 1;
+          write_flags = 1;
         end
       end
       {M3, T3}: begin
@@ -674,11 +728,12 @@ module instr_decoder #(
     output reg is_xchg,
     output reg is_alu_reg,
     output reg is_alu_imm,
+    output reg is_alu_alt,
     output reg is_inr,
     output reg is_dcr,
     output reg is_inx,
     output reg is_dcx,
-    output reg is_alu_alt,
+    output reg is_dad,
     output reg is_nop
 );
   localparam REG_MEM = 3'b110;
@@ -698,11 +753,12 @@ module instr_decoder #(
     is_xchg    = 0;
     is_alu_reg = 0;
     is_alu_imm = 0;
+    is_alu_alt = 0;
     is_inr     = 0;
     is_dcr     = 0;
     is_inx     = 0;
     is_dcx     = 0;
-    is_alu_alt = 0;
+    is_dad     = 0;
     is_nop     = 0;
 
     casez (instr)
@@ -719,11 +775,12 @@ module instr_decoder #(
       8'b11_101_011: is_xchg = 1;
       8'b10_zzz_zzz: is_alu_reg = 1;
       8'b11_zzz_110: is_alu_imm = 1;
+      8'b00_zzz_111: is_alu_alt = 1;
       8'b00_zzz_100: is_inr = 1;
       8'b00_zzz_101: is_dcr = 1;
       8'b00_zz0_011: is_inx = 1;
       8'b00_zz1_011: is_dcx = 1;
-      8'b00_zzz_111: is_alu_alt = 1;
+      8'b00_zz1_001: is_dad = 1;
       default:       is_nop = 1;
     endcase
   end
@@ -741,6 +798,36 @@ module instr_decoder #(
   assign is_alu_op_cmp = alu_op == 3'b111;
 endmodule
 
+module decimal_adjust #(
+    parameter XLEN = 8
+) (
+    input wire [XLEN-1:0] in,
+    input wire [XLEN-1:0] flags_in,
+
+    output wire [XLEN-1:0] out,
+    output reg  [XLEN-1:0] flags_out
+);
+  reg [XLEN/2-1:0] d0, d1;
+
+  always @(*) begin
+    {d1, d0}  = in;
+    flags_out = flags_in;
+
+    if (d0 > 9 || flags_out[`FA]) begin
+      {d1, d0} = {d1, d0} + 6;
+      flags_out[`FA] = 1;
+    end
+
+    if (d1 > 9 || flags_in[`FC]) begin
+      d1             = d1 + 6;
+      flags_out[`FC] = 1;
+    end
+  end
+
+  assign out = {d1, d0};
+endmodule
+
+
 module alu #(
     parameter XLEN = 8
 ) (
@@ -755,7 +842,6 @@ module alu #(
     input  wire [XLEN-1:0] flags_in,
     output reg  [XLEN-1:0] flags_out
 );
-
   reg  [XLEN-1:0] result;
 
   wire            carry_in = ~control[2] & control[0] & flags_in[`FC];
@@ -767,7 +853,22 @@ module alu #(
   wire [  XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
   wire [  XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
 
+  wire [  XLEN:0] sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
+
   reg             set_pzs_flags;
+
+  wire [XLEN-1:0] daa_flags_out;
+  wire [XLEN-1:0] daa_out;
+
+  decimal_adjust #(
+      .XLEN(XLEN)
+  ) decimal_adjust (
+      .in(op_a),
+      .flags_in(flags_in),
+
+      .out(daa_out),
+      .flags_out(daa_flags_out)
+  );
 
   always @(*) begin
     flags_out = flags_in;
@@ -775,50 +876,58 @@ module alu #(
 
     // TODO: use A flag
     casez (control)
-      5'b000zz, 5'b00111: begin
-        {flags_out[`FC], result} = op_a_ext + op_b_ext_signed + carry_ext_signed;
+      5'b00_0zz, 5'b00_111: begin
+        {flags_out[`FC], result} = sum;
         set_pzs_flags            = 1;
       end
-      5'b00100: begin
+      5'b00_100: begin
         result        = op_a & op_b;
         set_pzs_flags = 1;
       end
-      5'b00101: begin
+      5'b00_101: begin
         result        = op_a ^ op_b;
         set_pzs_flags = 1;
       end
-      5'b00110: begin
+      5'b00_110: begin
         result        = op_a | op_b;
         set_pzs_flags = 1;
       end
-      5'b01000: begin  // rlc
+      5'b01_000: begin  // rlc
         result = {op_a[XLEN-2:0], op_a[XLEN-1]};
         flags_out[`FC] = op_a[XLEN-1];
       end
-      5'b01001: begin  // rrc
+      5'b01_001: begin  // rrc
         result = {op_a[0], op_a[XLEN-1:1]};
         flags_out[`FC] = op_a[0];
       end
-      5'b01010: {flags_out[`FC], result} = {op_a, flags_out[`FC]};  // ral
-      5'b01011: {result, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
-      5'b01101: result = ~op_a;  // cma
-      5'b01110: begin  // stc
+      5'b01_010: {flags_out[`FC], result} = {op_a, flags_out[`FC]};  // ral
+      5'b01_011: {result, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
+      5'b01_100: begin  // daa
+        result = daa_out;
+        flags_out = daa_flags_out;
+      end
+      5'b01_101: result = ~op_a;  // cma
+      5'b01_110: begin  // stc
         result         = op_a;
         flags_out[`FC] = 1;
       end
-      5'b01111: begin  // cmc
+      5'b01_111: begin  // cmc
         result         = op_a;
         flags_out[`FC] = ~flags_out[`FC];
       end
-      5'b1zzz0: begin
+
+      5'b10_zz0: begin
         result        = op_b + 1;
         set_pzs_flags = 1;
       end
-      5'b1zzz1: begin
+      5'b10_zz1: begin
         result        = op_b - 1;
         set_pzs_flags = 1;
       end
-      default:  result = {XLEN{1'bx}};
+
+      5'b11_zzz: {flags_out[`FC], result} = sum;
+
+      default: result = {XLEN{1'bx}};
     endcase
 
     if (set_pzs_flags) begin
@@ -1015,7 +1124,7 @@ module i8080 (
       .wenable(write_act),
       .oenable(1'b1),
 
-      .in (a),
+      .in (act_src == `ACT_SRC_A ? a : bus),
       .out(act)
   );
 
@@ -1093,7 +1202,7 @@ module i8080 (
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
-       is_alu_reg, is_alu_imm, is_inr, is_dcr, is_inx, is_dcx, is_alu_alt, is_nop;
+       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_nop;
 
   instr_decoder #(
       .XLEN(XLEN)
@@ -1125,19 +1234,20 @@ module i8080 (
       .is_xchg   (is_xchg),
       .is_alu_reg(is_alu_reg),
       .is_alu_imm(is_alu_imm),
+      .is_alu_alt(is_alu_alt),
       .is_inr    (is_inr),
       .is_dcr    (is_dcr),
       .is_inx    (is_inx),
       .is_dcx    (is_dcx),
-      .is_alu_alt(is_alu_alt),
-      .is_nop    (is_nop)
+      .is_nop    (is_nop),
+      .is_dad    (is_dad)
   );
 
   wire       write_adr;
   wire [3:0] reg_sel;
   wire [4:0] alu_control;
   wire       write;
-  wire a_src, flags_src;
+  wire a_src, act_src, flags_src;
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
@@ -1175,11 +1285,12 @@ module i8080 (
       .is_xchg   (is_xchg),
       .is_alu_reg(is_alu_reg),
       .is_alu_imm(is_alu_imm),
+      .is_alu_alt(is_alu_alt),
       .is_inr    (is_inr),
       .is_dcr    (is_dcr),
       .is_inx    (is_inx),
       .is_dcx    (is_dcx),
-      .is_alu_alt(is_alu_alt),
+      .is_dad    (is_dad),
       .is_nop    (is_nop),
 
       .ready(ready),
@@ -1211,6 +1322,7 @@ module i8080 (
       .dec_rp     (dec_rp),
 
       .a_src    (a_src),
+      .act_src  (act_src),
       .flags_src(flags_src),
 
       .dbin (dbin),
