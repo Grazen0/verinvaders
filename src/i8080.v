@@ -2,12 +2,15 @@
 
 `define FC 0
 `define FP 2
-`define FAC 4
+`define FA 4 // TODO: implement this flag
 `define FZ 6
 `define FS 7
 
 `define FLAGS_SRC_ALU 1'b0
 `define FLAGS_SRC_BUS 1'b1
+
+`define A_SRC_ALU 1'b0
+`define A_SRC_BUS 1'b1
 
 `define RP_SEL_BC 3'b000
 `define RP_SEL_DE 3'b001
@@ -16,8 +19,8 @@
 `define RP_SEL_WZ 3'b100
 `define RP_SEL_PC 3'b101
 
-`define RP_LO 1'b0
-`define RP_HI 1'b1
+`define RP_LO 1'b1
+`define RP_HI 1'b0
 
 `define REG_SEL_B {`RP_SEL_BC, `RP_HI}
 `define REG_SEL_C {`RP_SEL_BC, `RP_LO}
@@ -53,8 +56,8 @@ module data_bus_buffer #(
       .wenable(out_wenable),
       .oenable(out_enable),
 
-      .in (bus),
-      .out(out)
+      .in(bus),
+      .out_tri(out)
   );
 
   assign bus = in_enable ? out : {XLEN{1'bz}};
@@ -68,11 +71,13 @@ module control (
     input wire [2:0] ddd,
     input wire [1:0] rp,
     input wire [2:0] cc,
+    input wire [2:0] alu_op,
 
     input wire is_sss_mem,
     input wire is_sss_a,
     input wire is_ddd_mem,
     input wire is_ddd_a,
+    input wire is_alu_op_cmp,
 
     input wire is_mov,
     input wire is_sphl,
@@ -85,6 +90,12 @@ module control (
     input wire is_ldax,
     input wire is_stax,
     input wire is_xchg,
+    input wire is_alu_reg,
+    input wire is_alu_imm,
+    input wire is_inr,
+    input wire is_dcr,
+    input wire is_inx,
+    input wire is_dcx,
 
     input  wire ready,
     output wire sync,
@@ -92,6 +103,8 @@ module control (
     output reg data_in_enable,
     output reg data_out_enable,
     output reg write_data_out,
+
+    output reg a_src,
     output reg flags_src,
 
     output wire write,
@@ -99,9 +112,9 @@ module control (
 
     output reg read_flags,
     output reg write_flags,
-    output reg write_acc,
-    output reg read_acc,
-    output reg write_acc_latch,
+    output reg write_a,
+    output reg read_a,
+    output reg write_act,
     output reg read_tmp,
     output reg write_tmp,
     output reg write_instr,
@@ -163,6 +176,7 @@ module control (
     data_out_enable = 0;
     write_data_out  = 0;
 
+    a_src           = `A_SRC_BUS;
     flags_src       = `FLAGS_SRC_ALU;
 
     reg_sel         = 4'bxxxx;
@@ -170,9 +184,9 @@ module control (
 
     read_flags      = 0;
     write_flags     = 0;
-    write_acc       = 0;
-    read_acc        = 0;
-    write_acc_latch = 0;
+    write_a         = 0;
+    read_a          = 0;
+    write_act       = 0;
     read_tmp        = 0;
     write_tmp       = 0;
     write_instr     = 0;
@@ -206,7 +220,7 @@ module control (
       {M1, T3}: begin
         if (is_mov && !is_sss_mem) begin
           if (is_sss_a) begin
-            read_acc = 1;
+            read_a = 1;
           end else begin
             reg_sel   = sss_ext;
             read_regs = 1;
@@ -222,6 +236,25 @@ module control (
         if (is_xchg) begin
           swap_hl_de = 1;
         end
+
+        if (is_alu_reg) begin
+          if (!is_sss_mem) begin
+            write_tmp       = 1;
+
+            if (is_sss_a) begin
+              read_a = 1;
+            end else begin
+              reg_sel   = sss_ext;
+              read_regs = 1;
+            end
+          end
+
+          write_act = 1;
+        end
+
+        if (is_alu_imm) begin
+          write_act = 1;
+        end
       end
       {M1, T4}: begin
         if (is_mov) begin
@@ -229,7 +262,7 @@ module control (
             read_tmp = 1;
 
             if (is_ddd_a) begin
-              write_acc = 1;
+              write_a = 1;
             end else begin
               reg_sel = ddd_ext;
               write_regs = 1;
@@ -259,11 +292,44 @@ module control (
         if (is_xchg) begin
           instr_end = 1;
         end
+
+        if (is_alu_reg) begin
+          mcycle_end = 1;
+
+          if (is_sss_mem) begin
+            reg_sel   = {`RP_SEL_HL, 1'bx};
+            write_adr = 1;
+          end else begin
+            alu_control = {1'b0, alu_op};
+            a_src       = `A_SRC_ALU;
+            write_a     = ~is_alu_op_cmp;
+            write_flags = 1;
+
+            instr_end = 1;
+          end
+        end
+
+        if (is_alu_imm) begin
+          mcycle_end = 1;
+
+          reg_sel   = {`RP_SEL_PC, 1'bx};
+          write_adr = 1;
+        end
+
+        if (is_inx) begin
+          reg_sel = {rp_ext, 1'bx};
+          inc_rp = 1;
+        end
+
+        if (is_dcx) begin
+          reg_sel = {rp_ext, 1'bx};
+          dec_rp = 1;
+        end
       end
       {M1, T5}: begin
         mcycle_end = 1;
 
-        if (is_mov || is_sphl) begin
+        if (is_mov || is_sphl || is_inx || is_dcx) begin
           instr_end = 1;
         end
       end
@@ -276,13 +342,13 @@ module control (
           end
         end
 
-        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_alu_imm) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
 
         if (is_stax) begin
-          read_acc = 1;
+          read_a = 1;
           write_data_out = 1;
         end
       end
@@ -304,10 +370,10 @@ module control (
           if (is_ddd_mem) begin
             write_tmp = 1;
           end else if (is_ddd_a) begin
-            write_acc = 1;
+            write_a = 1;
           end else begin
-            write_regs = 1;
             reg_sel    = ddd_ext;
+            write_regs = 1;
           end
         end
 
@@ -325,11 +391,16 @@ module control (
 
         if (is_ldax) begin
           data_in_enable = 1;
-          write_acc      = 1;
+          write_a        = 1;
         end
 
         if (is_stax) begin
           data_out_enable = 1;
+        end
+
+        if (is_alu_reg || is_alu_imm) begin // is_alu_reg implies is_sss_mem
+          data_in_enable = 1;
+          write_tmp      = 1;
         end
       end
 
@@ -352,6 +423,15 @@ module control (
         if (is_lxi || is_lda || is_sta || is_lhld || is_shld) begin
           write_adr = 1;
           reg_sel = {`RP_SEL_PC, 1'bx};
+        end
+
+        if (is_alu_reg || is_alu_imm) begin  // is_alu_reg implies is_sss_mem
+          alu_control = {1'b0, alu_op};
+          a_src       = `A_SRC_ALU;
+          write_a     = ~is_alu_op_cmp;
+          write_flags = 1;
+
+          instr_end = 1;
         end
       end
 
@@ -399,7 +479,7 @@ module control (
 
       {M4, T1}: begin
         if (is_sta) begin
-          read_acc       = 1;
+          read_a       = 1;
           write_data_out = 1;
         end
 
@@ -413,7 +493,7 @@ module control (
       {M4, T2}: begin
         if (is_lda) begin
           data_in_enable = 1;
-          write_acc      = 1;
+          write_a      = 1;
         end
 
         if (is_sta) begin
@@ -515,12 +595,13 @@ module instr_decoder #(
     output wire [2:0] ddd,
     output wire [1:0] rp,
     output wire [2:0] cc,
-    output wire [2:0] alu_control,
+    output wire [2:0] alu_op,
 
     output wire is_sss_mem,
     output wire is_sss_a,
     output wire is_ddd_mem,
     output wire is_ddd_a,
+    output wire is_alu_op_cmp,
 
     output reg is_mov,
     output reg is_sphl,
@@ -532,23 +613,35 @@ module instr_decoder #(
     output reg is_shld,
     output reg is_ldax,
     output reg is_stax,
-    output reg is_xchg
+    output reg is_xchg,
+    output reg is_alu_reg,
+    output reg is_alu_imm,
+    output reg is_inr,
+    output reg is_dcr,
+    output reg is_inx,
+    output reg is_dcx
 );
   localparam REG_MEM = 3'b110;
   localparam REG_A = 3'b111;
 
   always @(*) begin
-    is_mov  = 0;
-    is_sphl = 0;
-    is_mvi  = 0;
-    is_lxi  = 0;
-    is_lda  = 0;
-    is_sta  = 0;
-    is_lhld = 0;
-    is_shld = 0;
-    is_ldax = 0;
-    is_stax = 0;
-    is_xchg = 0;
+    is_mov     = 0;
+    is_sphl    = 0;
+    is_mvi     = 0;
+    is_lxi     = 0;
+    is_lda     = 0;
+    is_sta     = 0;
+    is_lhld    = 0;
+    is_shld    = 0;
+    is_ldax    = 0;
+    is_stax    = 0;
+    is_xchg    = 0;
+    is_alu_reg = 0;
+    is_alu_imm = 0;
+    is_inr     = 0;
+    is_dcr     = 0;
+    is_inx     = 0;
+    is_dcx     = 0;
 
     casez (instr)
       8'b01_zzz_zzz: is_mov = 1;
@@ -562,6 +655,12 @@ module instr_decoder #(
       8'b00_zz1_010: is_ldax = 1;
       8'b00_zz0_010: is_stax = 1;
       8'b11_101_011: is_xchg = 1;
+      8'b10_zzz_zzz: is_alu_reg = 1;
+      8'b11_zzz_110: is_alu_imm = 1;
+      8'b00_zzz_100: is_inr = 1;
+      8'b00_zzz_101: is_dcr = 1;
+      8'b00_zz0_011: is_inx = 1;
+      8'b00_zz1_011: is_dcx = 1;
       default:       ;
     endcase
   end
@@ -570,12 +669,13 @@ module instr_decoder #(
   assign ddd = instr[5:3];
   assign rp = instr[5:4];
   assign cc = instr[5:3];
-  assign alu_control = instr[5:3];
+  assign alu_op = instr[5:3];
 
   assign is_sss_mem = sss == REG_MEM;
   assign is_sss_a = sss == REG_A;
   assign is_ddd_mem = ddd == REG_MEM;
   assign is_ddd_a = ddd == REG_A;
+  assign is_alu_op_cmp = alu_op == 3'b111;
 endmodule
 
 module alu #(
@@ -586,29 +686,30 @@ module alu #(
     input wire [3:0] control,
     input wire oenable,
 
-    output tri [XLEN-1:0] out,
+    output wire [XLEN-1:0] out,
+    output tri  [XLEN-1:0] out_tri,
 
     input  wire [XLEN-1:0] flags_in,
     output reg  [XLEN-1:0] flags_out
 );
 
-  reg [XLEN-1:0] result;
-  reg carry;
+  reg  [XLEN-1:0] result;
 
-  wire [XLEN:0] op_a_ext = {1'b0, op_a};
-  wire [XLEN:0] op_b_ext = {1'b0, op_b};
-  wire [XLEN:0] carry_ext = {{(XLEN) {1'b0}}, control[0] & flags_in[`FC]};
+  wire            carry_in = ~control[2] & control[0] & flags_in[`FC];
 
-  wire [XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
-  wire [XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
+  wire [  XLEN:0] op_a_ext = {1'b0, op_a};
+  wire [  XLEN:0] op_b_ext = {1'b0, op_b};
+  wire [  XLEN:0] carry_ext = {{(XLEN) {1'b0}}, carry_in};
+
+  wire [  XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
+  wire [  XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
 
   always @(*) begin
-    carry     = 0;
     flags_out = flags_in;
 
     // TODO: use A flag
     casez (control)
-      4'b00zz: begin
+      4'b00zz, 4'b0111: begin
         {flags_out[`FC], result} = op_a_ext + op_b_ext_signed + carry_ext_signed;
         flags_out[`FP]           = ~(^result);
         flags_out[`FZ]           = result == 0;
@@ -635,10 +736,14 @@ module alu #(
         flags_out[`FZ] = result == 0;
         flags_out[`FS] = result[XLEN-1];
       end
+      4'b1000: {flags_out[`FC], result} = {result, flags_out[`FC]};
+      4'b1001: {result, flags_out[`FC]} = {flags_out[`FC], result};
       default: result = {XLEN{1'bx}};
     endcase
   end
 
+  assign out = result;
+  assign out_tri = oenable ? out_tri : {XLEN{1'bz}};
 endmodule
 
 module register_array #(
@@ -759,28 +864,30 @@ module i8080 (
 
   tri [XLEN-1:0] bus;
 
-  tri [XLEN-1:0] flags;
-  tri [XLEN-1:0] acc;
-  tri [XLEN-1:0] acc_latch;
-  tri [XLEN-1:0] tmp;
+  tri [XLEN-1:0] flags_tri;
+  tri [XLEN-1:0] a_tri;
+  tri [XLEN-1:0] act;
+  tri [XLEN-1:0] tmp_tri;
   tri [XLEN-1:0] instr;
   tri [XLEN-1:0] alu_flags_out;
-  tri [XLEN-1:0] alu_out;
+  tri [XLEN-1:0] alu_out_tri;
   tri [XLEN-1:0] regs_out;
 
-  assign bus = acc;
-  assign bus = tmp;
-  assign bus = flags;
-  assign bus = alu_out;
+  assign bus = a_tri;
+  assign bus = tmp_tri;
+  assign bus = flags_tri;
+  assign bus = alu_out_tri;
   assign bus = regs_out;
 
   wire read_flags, write_flags;
-  wire read_acc, write_acc;
-  wire write_acc_latch;
+  wire read_a, write_a;
+  wire write_act;
   wire read_tmp, write_tmp;
   wire write_instr;
   wire read_alu;
   wire read_regs, write_regs;
+
+  wire [XLEN-1:0] flags;
 
   register #(
       .WIDTH(XLEN),
@@ -792,35 +899,41 @@ module i8080 (
       .wenable(write_flags),
       .oenable(read_flags),
 
-      .in (flags_src == `FLAGS_SRC_ALU ? alu_flags_out : bus),
-      .out(flags)
+      .in     (flags_src == `FLAGS_SRC_ALU ? alu_flags_out : bus),
+      .out_tri(flags_tri),
+      .out    (flags)
+  );
+
+  wire [XLEN-1:0] a;
+
+  register #(
+      .WIDTH(XLEN)
+  ) a_reg (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .wenable(write_a),
+      .oenable(read_a),
+
+      .in(a_src == `A_SRC_BUS ? bus : alu_out),
+      .out_tri(a_tri),
+      .out(a)
   );
 
   register #(
       .WIDTH(XLEN)
-  ) acc_reg (
+  ) act_reg (
       .clk  (clk),
       .rst_n(rst_n),
 
-      .wenable(write_acc),
-      .oenable(read_acc),
-
-      .in (bus),
-      .out(acc)
-  );
-
-  register #(
-      .WIDTH(XLEN)
-  ) acc_latch_reg (
-      .clk  (clk),
-      .rst_n(rst_n),
-
-      .wenable(write_acc_latch),
+      .wenable(write_act),
       .oenable(1'b1),
 
-      .in (acc),
-      .out(acc_latch)
+      .in (a),
+      .out(act)
   );
+
+  wire [XLEN-1:0] tmp;
 
   register #(
       .WIDTH(XLEN)
@@ -831,7 +944,8 @@ module i8080 (
       .wenable(write_tmp),
       .oenable(read_tmp),
 
-      .in (bus),
+      .in(bus),
+      .out_tri(tmp_tri),
       .out(tmp)
   );
 
@@ -844,23 +958,25 @@ module i8080 (
       .wenable(write_instr),
       .oenable(1'b1),
 
-      .in (bus),
-      .out(instr)
+      .in(bus),
+      .out_tri(instr)
   );
 
+  wire [XLEN-1:0] alu_out;
 
   alu #(
       .XLEN(XLEN)
   ) alu (
-      .op_a(tmp),
-      .op_b(acc_latch),
+      .op_a   (act),
+      .op_b   (tmp),
       .control(alu_control),
 
       .flags_in (flags),
       .flags_out(alu_flags_out),
 
       .oenable(read_alu),
-      .out(alu_out)
+      .out    (alu_out),
+      .out_tri(alu_out_tri)
   );
 
   wire [2*XLEN-1:0] pc;
@@ -887,44 +1003,53 @@ module i8080 (
       .pc (pc)
   );
 
-  wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a;
-  wire [2:0] sss, ddd, cc;
+  wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a, is_alu_op_cmp;
+  wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
-  wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg;
+  wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
+       is_alu_reg, is_alu_imm, is_inr, is_dcr, is_inx, is_dcx;
 
   instr_decoder #(
       .XLEN(XLEN)
   ) instr_decoder (
       .instr(instr),
 
-      .is_sss_mem(is_sss_mem),
-      .is_sss_a  (is_sss_a),
-      .is_ddd_mem(is_ddd_mem),
-      .is_ddd_a  (is_ddd_a),
+      .is_sss_mem   (is_sss_mem),
+      .is_sss_a     (is_sss_a),
+      .is_ddd_mem   (is_ddd_mem),
+      .is_ddd_a     (is_ddd_a),
+      .is_alu_op_cmp(is_alu_op_cmp),
 
-      .sss(sss),
-      .ddd(ddd),
-      .rp (rp),
-      .cc (cc),
+      .sss   (sss),
+      .ddd   (ddd),
+      .rp    (rp),
+      .cc    (cc),
+      .alu_op(alu_op),
 
-      .is_mov (is_mov),
-      .is_sphl(is_sphl),
-      .is_mvi (is_mvi),
-      .is_lxi (is_lxi),
-      .is_lda (is_lda),
-      .is_sta (is_sta),
-      .is_lhld(is_lhld),
-      .is_shld(is_shld),
-      .is_ldax(is_ldax),
-      .is_stax(is_stax),
-      .is_xchg(is_xchg)
+      .is_mov    (is_mov),
+      .is_sphl   (is_sphl),
+      .is_mvi    (is_mvi),
+      .is_lxi    (is_lxi),
+      .is_lda    (is_lda),
+      .is_sta    (is_sta),
+      .is_lhld   (is_lhld),
+      .is_shld   (is_shld),
+      .is_ldax   (is_ldax),
+      .is_stax   (is_stax),
+      .is_xchg   (is_xchg),
+      .is_alu_reg(is_alu_reg),
+      .is_alu_imm(is_alu_imm),
+      .is_inr    (is_inr),
+      .is_dcr    (is_dcr),
+      .is_inx    (is_inx),
+      .is_dcx    (is_dcx)
   );
 
   wire write_adr;
   wire [3:0] reg_sel;
   wire [3:0] alu_control;
   wire write;
-  wire flags_src;
+  wire a_src, flags_src;
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
@@ -937,27 +1062,35 @@ module i8080 (
       .clk  (clk),
       .rst_n(rst_n),
 
-      .sss(sss),
-      .ddd(ddd),
-      .rp (rp),
-      .cc (cc),
+      .sss   (sss),
+      .ddd   (ddd),
+      .rp    (rp),
+      .cc    (cc),
+      .alu_op(alu_op),
 
-      .is_sss_mem(is_sss_mem),
-      .is_sss_a  (is_sss_a),
-      .is_ddd_mem(is_ddd_mem),
-      .is_ddd_a  (is_ddd_a),
+      .is_sss_mem   (is_sss_mem),
+      .is_sss_a     (is_sss_a),
+      .is_ddd_mem   (is_ddd_mem),
+      .is_ddd_a     (is_ddd_a),
+      .is_alu_op_cmp(is_alu_op_cmp),
 
-      .is_mov (is_mov),
-      .is_sphl(is_sphl),
-      .is_mvi (is_mvi),
-      .is_lxi (is_lxi),
-      .is_lda (is_lda),
-      .is_sta (is_sta),
-      .is_lhld(is_lhld),
-      .is_shld(is_shld),
-      .is_ldax(is_ldax),
-      .is_stax(is_stax),
-      .is_xchg(is_xchg),
+      .is_mov    (is_mov),
+      .is_sphl   (is_sphl),
+      .is_mvi    (is_mvi),
+      .is_lxi    (is_lxi),
+      .is_lda    (is_lda),
+      .is_sta    (is_sta),
+      .is_lhld   (is_lhld),
+      .is_shld   (is_shld),
+      .is_ldax   (is_ldax),
+      .is_stax   (is_stax),
+      .is_xchg   (is_xchg),
+      .is_alu_reg(is_alu_reg),
+      .is_alu_imm(is_alu_imm),
+      .is_inr    (is_inr),
+      .is_dcr    (is_dcr),
+      .is_inx    (is_inx),
+      .is_dcx    (is_dcx),
 
       .ready(ready),
       .sync (sync),
@@ -966,16 +1099,17 @@ module i8080 (
       .data_out_enable(data_out_enable),
       .write_data_out (write_data_out),
 
-      .read_flags     (read_flags),
-      .write_flags    (write_flags),
-      .read_acc       (read_acc),
-      .write_acc      (write_acc),
-      .write_acc_latch(write_acc_latch),
-      .read_tmp       (read_tmp),
-      .write_tmp      (write_tmp),
-      .write_instr    (write_instr),
-      .read_regs      (read_regs),
-      .write_regs     (write_regs),
+      .read_flags (read_flags),
+      .write_flags(write_flags),
+      .read_a     (read_a),
+      .write_a    (write_a),
+      .write_act  (write_act),
+      .read_tmp   (read_tmp),
+      .write_tmp  (write_tmp),
+      .write_instr(write_instr),
+      .read_alu   (read_alu),
+      .read_regs  (read_regs),
+      .write_regs (write_regs),
 
       .swap_hl_de  (swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
@@ -985,7 +1119,9 @@ module i8080 (
       .write_adr  (write_adr),
       .inc_rp     (inc_rp),
       .dec_rp     (dec_rp),
-      .flags_src  (flags_src),
+
+      .a_src    (a_src),
+      .flags_src(flags_src),
 
       .dbin (dbin),
       .write(write)
@@ -1000,8 +1136,8 @@ module i8080 (
       .wenable(write_adr),
       .oenable(1'b1),
 
-      .in (regs_out_rp),
-      .out(addr)
+      .in(regs_out_rp),
+      .out_tri(addr)
   );
 
   data_bus_buffer #(
