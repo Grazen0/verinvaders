@@ -6,5 +6,6 @@ pkgs.mkShell {
     gtkwave
     iverilog
     xxd
+    zasm
   ];
 }

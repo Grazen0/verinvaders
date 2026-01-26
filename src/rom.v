@@ -5,18 +5,19 @@ module rom #(
     parameter DATA_WIDTH  = 8,
     parameter ADDR_WIDTH  = 0
 ) (
-    input wire [ADDR_WIDTH-1:0] addr,
-    input wire oenable,
+    input  wire [ADDR_WIDTH-1:0] addr,
+    output tri  [DATA_WIDTH-1:0] data,
 
-    output tri [DATA_WIDTH-1:0] out
+    input wire enable,
+    input wire oenable
 );
   localparam SIZE = 2 ** ADDR_WIDTH;
 
-  reg [DATA_WIDTH-1:0] data[0:ADDR_WIDTH-1];
+  reg [DATA_WIDTH-1:0] mem[0:SIZE-1];
 
-  assign out = oenable ? data[addr] : {DATA_WIDTH{1'bz}};
+  assign data = (enable & oenable) ? mem[addr] : {DATA_WIDTH{1'bz}};
 
   initial begin
-    $readmemh(SOURCE_FILE, data);
+    $readmemh(SOURCE_FILE, mem);
   end
 endmodule

@@ -18,6 +18,6 @@ module invaders_tb ();
 
     #10 rst_n = 1;
 
-    #100 $finish();
+    #1000 $finish();
   end
 endmodule
