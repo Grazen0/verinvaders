@@ -56,7 +56,7 @@ module data_bus_buffer #(
       .wenable(out_wenable),
       .oenable(out_enable),
 
-      .in(bus),
+      .in     (bus),
       .out_tri(out)
   );
 
@@ -96,6 +96,7 @@ module control (
     input wire is_dcr,
     input wire is_inx,
     input wire is_dcx,
+    input wire is_alu_alt,
 
     input  wire ready,
     output wire sync,
@@ -252,7 +253,7 @@ module control (
           write_act = 1;
         end
 
-        if (is_alu_imm) begin
+        if (is_alu_imm || is_alu_alt) begin
           write_act = 1;
         end
       end
@@ -318,12 +319,21 @@ module control (
 
         if (is_inx) begin
           reg_sel = {rp_ext, 1'bx};
-          inc_rp = 1;
+          inc_rp  = 1;
         end
 
         if (is_dcx) begin
           reg_sel = {rp_ext, 1'bx};
-          dec_rp = 1;
+          dec_rp  = 1;
+        end
+
+        if (is_alu_alt) begin
+            alu_control = {1'b1, alu_op};
+            a_src       = `A_SRC_ALU;
+            write_a     = 1;
+            write_flags = 1;
+
+            instr_end = 1;
         end
       end
       {M1, T5}: begin
@@ -619,7 +629,8 @@ module instr_decoder #(
     output reg is_inr,
     output reg is_dcr,
     output reg is_inx,
-    output reg is_dcx
+    output reg is_dcx,
+    output reg is_alu_alt
 );
   localparam REG_MEM = 3'b110;
   localparam REG_A = 3'b111;
@@ -642,6 +653,7 @@ module instr_decoder #(
     is_dcr     = 0;
     is_inx     = 0;
     is_dcx     = 0;
+    is_alu_alt = 0;
 
     casez (instr)
       8'b01_zzz_zzz: is_mov = 1;
@@ -661,6 +673,7 @@ module instr_decoder #(
       8'b00_zzz_101: is_dcr = 1;
       8'b00_zz0_011: is_inx = 1;
       8'b00_zz1_011: is_dcx = 1;
+      8'b00_zzz_111: is_alu_alt = 1;
       default:       ;
     endcase
   end
@@ -736,8 +749,25 @@ module alu #(
         flags_out[`FZ] = result == 0;
         flags_out[`FS] = result[XLEN-1];
       end
-      4'b1000: {flags_out[`FC], result} = {result, flags_out[`FC]};
-      4'b1001: {result, flags_out[`FC]} = {flags_out[`FC], result};
+      4'b1000: begin  // rlc
+        result = {op_a[XLEN-2:0], op_a[XLEN-1]};
+        flags_out[`FC] = op_a[XLEN-1];
+      end
+      4'b1001: begin  // rrc
+        result = {op_a[0], op_a[XLEN-1:1]};
+        flags_out[`FC] = op_a[0];
+      end
+      4'b1010: {flags_out[`FC], result} = {op_a, flags_out[`FC]};  // ral
+      4'b1011: {result, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
+      4'b1101: result = ~op_a;  // cma
+      4'b1111: begin  // cmc
+        result = op_a;
+        flags_out[`FC] = ~flags_out[`FC];
+      end
+      4'b1110: begin  // stc
+        result = op_a;
+        flags_out[`FC] = 1;
+      end
       default: result = {XLEN{1'bx}};
     endcase
   end
@@ -1007,7 +1037,7 @@ module i8080 (
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
-       is_alu_reg, is_alu_imm, is_inr, is_dcr, is_inx, is_dcx;
+       is_alu_reg, is_alu_imm, is_inr, is_dcr, is_inx, is_dcx, is_alu_alt;
 
   instr_decoder #(
       .XLEN(XLEN)
@@ -1042,7 +1072,8 @@ module i8080 (
       .is_inr    (is_inr),
       .is_dcr    (is_dcr),
       .is_inx    (is_inx),
-      .is_dcx    (is_dcx)
+      .is_dcx    (is_dcx),
+      .is_alu_alt(is_alu_alt)
   );
 
   wire write_adr;
@@ -1091,6 +1122,7 @@ module i8080 (
       .is_dcr    (is_dcr),
       .is_inx    (is_inx),
       .is_dcx    (is_dcx),
+      .is_alu_alt(is_alu_alt),
 
       .ready(ready),
       .sync (sync),
