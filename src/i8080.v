@@ -105,6 +105,7 @@ module control (
     input wire is_dcx,
     input wire is_dad,
     input wire is_jmp,
+    input wire is_pchl,
     input wire is_ei,
     input wire is_di,
     input wire is_nop,
@@ -140,6 +141,7 @@ module control (
 
     output reg swap_hl_de,
     output reg cpy_hl_to_sp,
+    output reg cpy_hl_to_pc,
     output reg write_pc_inc_dec,
 
     output reg [3:0] reg_sel,
@@ -222,6 +224,7 @@ module control (
 
     swap_hl_de       = 0;
     cpy_hl_to_sp     = 0;
+    cpy_hl_to_pc     = 0;
     write_pc_inc_dec = 0;
 
     write_adr        = 0;
@@ -263,6 +266,10 @@ module control (
 
         if (is_sphl) begin
           cpy_hl_to_sp = 1;
+        end
+
+        if (is_pchl) begin
+          cpy_hl_to_pc = 1;
         end
 
         if (is_xchg) begin
@@ -390,11 +397,7 @@ module control (
         end
       end
       {M1, T5}: begin
-        mcycle_end = 1;
-
-        if (is_mov || is_sphl || is_inr || is_dcr || is_inx || is_dcx) begin
-          instr_end = 1;
-        end
+        instr_end = 1;
       end
 
       {M2, T1}: begin
@@ -779,6 +782,7 @@ module instr_decoder #(
     output reg is_dcx,
     output reg is_dad,
     output reg is_jmp,
+    output reg is_pchl,
     output reg is_ei,
     output reg is_di,
     output reg is_nop,
@@ -825,6 +829,7 @@ module instr_decoder #(
     is_dcx     = 0;
     is_dad     = 0;
     is_jmp     = 0;
+    is_pchl    = 0;
     is_ei      = 0;
     is_di      = 0;
     is_nop     = 0;
@@ -851,6 +856,7 @@ module instr_decoder #(
       8'b00_zz1_001: is_dad = 1;
       8'b11_000_011: is_jmp = 1;
       8'b11_zzz_010: is_jmp = 1;
+      8'b11_101_001: is_pchl = 1;
       8'b11_111_011: is_ei = 1;
       8'b11_110_011: is_di = 1;
       default:       is_nop = 1;
@@ -1037,6 +1043,7 @@ module register_array #(
     // why
     input wire swap_hl_de,
     input wire cpy_hl_to_sp,
+    input wire cpy_hl_to_pc,
     input wire inc,
     input wire dec,
     input wire write_pc_inc_dec
@@ -1108,6 +1115,8 @@ module register_array #(
 
     if (write_pc_inc_dec) begin
       pc_next = inc_dec_result;
+    end else if (cpy_hl_to_pc) begin
+      pc_next = {h, l};
     end
   end
 
@@ -1290,6 +1299,7 @@ module i8080 (
 
       .swap_hl_de(swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
+      .cpy_hl_to_pc(cpy_hl_to_pc),
       .write_pc_inc_dec(write_pc_inc_dec),
 
       .inc(inc_rp),
@@ -1300,7 +1310,7 @@ module i8080 (
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
-       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp,
+       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
        is_ei, is_di, is_nop;
   wire branch_cond;
 
@@ -1342,6 +1352,7 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
+      .is_pchl   (is_pchl),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
@@ -1357,7 +1368,7 @@ module i8080 (
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
-  wire swap_hl_de, cpy_hl_to_sp, write_pc_inc_dec;
+  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, write_pc_inc_dec;
 
   wire inc_rp, dec_rp;
 
@@ -1397,6 +1408,7 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
+      .is_pchl   (is_pchl),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
@@ -1426,6 +1438,7 @@ module i8080 (
 
       .swap_hl_de(swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
+      .cpy_hl_to_pc(cpy_hl_to_pc),
       .write_pc_inc_dec(write_pc_inc_dec),
 
       .reg_sel    (reg_sel),
