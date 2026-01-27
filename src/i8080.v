@@ -34,6 +34,10 @@
 `define REG_SEL_L {`RP_SEL_HL, `RP_LO}
 `define REG_SEL_W {`RP_SEL_WZ, `RP_HI}
 `define REG_SEL_Z {`RP_SEL_WZ, `RP_LO}
+`define REG_SEL_SP_HI {`RP_SEL_SP, `RP_HI}
+`define REG_SEL_SP_LO {`RP_SEL_SP, `RP_LO}
+`define REG_SEL_PC_HI {`RP_SEL_PC, `RP_HI}
+`define REG_SEL_PC_LO {`RP_SEL_PC, `RP_LO}
 
 
 module data_bus_buffer #(
@@ -105,11 +109,14 @@ module control (
     input wire is_dcx,
     input wire is_dad,
     input wire is_jmp,
+    input wire is_call,
+    input wire is_ret,
     input wire is_pchl,
     input wire is_ei,
     input wire is_di,
     input wire is_nop,
 
+    input wire use_branch_cond,
     input wire branch_cond,
 
     input  wire ready,
@@ -395,9 +402,34 @@ module control (
 
           mcycle_end = 1;
         end
+
+        if (is_call && branch_cond) begin
+          reg_sel = {`RP_SEL_SP, 1'bx};
+          dec_rp = 1;
+        end
+
+        if (is_ret && !use_branch_cond) begin
+          mcycle_end = 1;
+          reg_sel    = {`RP_SEL_SP, 1'bx};
+          write_adr  = 1;
+        end
       end
       {M1, T5}: begin
-        instr_end = 1;
+        mcycle_end = 1;
+        instr_end  = 1;
+
+        if (is_call) begin
+          instr_end = 0;
+
+          reg_sel   = {`RP_SEL_PC, 1'bx};
+          write_adr = 1;
+        end
+
+        if (is_ret && branch_cond) begin // is_ret here implies use_branch_cond
+          instr_end = 0;
+          reg_sel    = {`RP_SEL_SP, 1'bx};
+          write_adr  = 1;
+        end
       end
 
       {M2, T1}: begin
@@ -409,7 +441,7 @@ module control (
         end
 
         if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_alu_imm
-            || is_jmp) begin
+            || is_jmp || is_call) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
@@ -423,6 +455,11 @@ module control (
           reg_sel   = `REG_SEL_L;
           read_regs = 1;
           write_tmp = 1;
+        end
+
+        if (is_ret) begin
+          reg_sel = {`RP_SEL_SP, 1'bx};
+          inc_rp  = 1;
         end
       end
 
@@ -452,7 +489,7 @@ module control (
           reg_sel        = {rp_ext, `RP_LO};
         end
 
-        if (is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
+        if (is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call) begin
           data_in_enable = 1;
           write_regs     = 1;
           reg_sel        = `REG_SEL_Z;
@@ -485,6 +522,12 @@ module control (
           write_regs  = 1;
           write_flags = 1;
         end
+
+        if (is_ret) begin
+          data_in_enable = 1;
+          reg_sel        = `REG_SEL_Z;
+          write_regs     = 1;
+        end
       end
 
       {M2, T3}: begin
@@ -503,7 +546,7 @@ module control (
           end
         end
 
-        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
+        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call) begin
           write_adr = 1;
           reg_sel = {`RP_SEL_PC, 1'bx};
         end
@@ -529,6 +572,11 @@ module control (
           act_src = `ACT_SRC_BUS;
           write_act = 1;
         end
+
+        if (is_ret) begin
+          reg_sel    = {`RP_SEL_SP, 1'bx};
+          write_adr  = 1;
+        end
       end
 
       {M3, T1}: begin
@@ -537,7 +585,7 @@ module control (
           write_data_out = 1;
         end
 
-        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
+        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
@@ -554,6 +602,11 @@ module control (
           read_regs = 1;
           write_tmp = 1;
         end
+
+        if (is_ret) begin
+          reg_sel = {`RP_SEL_SP, 1'bx};
+          inc_rp  = 1;
+        end
       end
       {M3, T2}, {M3, TW}: begin
         if (is_mvi || is_inr || is_dcr) begin
@@ -566,7 +619,7 @@ module control (
           reg_sel        = {rp_ext, `RP_HI};
         end
 
-        if (is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
+        if (is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call) begin
           data_in_enable = 1;
           reg_sel        = `REG_SEL_W;
           write_regs     = 1;
@@ -579,6 +632,12 @@ module control (
           reg_sel     = `REG_SEL_H;
           write_regs  = 1;
           write_flags = 1;
+        end
+
+        if (is_ret) begin
+          data_in_enable = 1;
+          reg_sel        = `REG_SEL_W;
+          write_regs     = 1;
         end
       end
       {M3, T3}: begin
@@ -600,6 +659,21 @@ module control (
           end
           instr_end = 1;
         end
+
+        if (is_call) begin
+          if (branch_cond) begin
+            reg_sel   = {`RP_SEL_SP, 1'bx};
+            write_adr = 1;
+            dec_rp    = 1;
+          end else begin
+            instr_end = 1;
+          end
+        end
+
+        if (is_ret) begin
+          instr_end     = 1;
+          wz_as_pc_next = 1;
+        end
       end
 
       {M4, T1}: begin
@@ -613,6 +687,12 @@ module control (
           read_regs      = 1;
           write_data_out = 1;
         end
+
+        if (is_call) begin
+          reg_sel        = `REG_SEL_PC_HI;
+          read_regs      = 1;
+          write_data_out = 1;
+        end
       end
 
       {M4, T2}, {M4, TW}: begin
@@ -621,7 +701,7 @@ module control (
           write_a        = 1;
         end
 
-        if (is_sta) begin
+        if (is_sta || is_shld || is_call) begin
           data_out_enable = 1;
         end
 
@@ -629,10 +709,6 @@ module control (
           reg_sel = `REG_SEL_L;
           write_regs = 1;
           data_in_enable = 1;
-        end
-
-        if (is_shld) begin
-          data_out_enable = 1;
         end
       end
 
@@ -644,7 +720,12 @@ module control (
         end
 
         if (is_lhld || is_shld) begin
-          reg_sel = {`RP_SEL_WZ, 1'bx};
+          reg_sel   = {`RP_SEL_WZ, 1'bx};
+          write_adr = 1;
+        end
+
+        if (is_call) begin
+          reg_sel   = {`RP_SEL_SP, 1'bx};
           write_adr = 1;
         end
       end
@@ -652,6 +733,12 @@ module control (
       {M5, T1}: begin
         if (is_shld) begin
           reg_sel = `REG_SEL_H;
+          read_regs = 1;
+          write_data_out = 1;
+        end
+
+        if (is_call) begin
+          reg_sel = `REG_SEL_PC_LO;
           read_regs = 1;
           write_data_out = 1;
         end
@@ -664,7 +751,7 @@ module control (
           data_in_enable = 1;
         end
 
-        if (is_shld) begin
+        if (is_shld || is_call) begin
           data_out_enable = 1;
         end
       end
@@ -672,6 +759,11 @@ module control (
       {M5, T3}: begin
         if (is_lhld || is_shld) begin
           instr_end = 1;
+        end
+
+        if (is_call) begin
+          instr_end = 1;
+          wz_as_pc_next = 1;
         end
       end
 
@@ -782,15 +874,20 @@ module instr_decoder #(
     output reg is_dcx,
     output reg is_dad,
     output reg is_jmp,
+    output reg is_call,
+    output reg is_ret,
     output reg is_pchl,
     output reg is_ei,
     output reg is_di,
     output reg is_nop,
 
-    output reg branch_cond
+    output wire use_branch_cond,
+    output reg  branch_cond
 );
   localparam REG_MEM = 3'b110;
   localparam REG_A = 3'b111;
+
+  assign use_branch_cond = ~instr[0];
 
   always @(*) begin
     branch_cond = 0;
@@ -829,6 +926,8 @@ module instr_decoder #(
     is_dcx     = 0;
     is_dad     = 0;
     is_jmp     = 0;
+    is_call    = 0;
+    is_ret     = 0;
     is_pchl    = 0;
     is_ei      = 0;
     is_di      = 0;
@@ -856,6 +955,10 @@ module instr_decoder #(
       8'b00_zz1_001: is_dad = 1;
       8'b11_000_011: is_jmp = 1;
       8'b11_zzz_010: is_jmp = 1;
+      8'b11_001_101: is_call = 1;
+      8'b11_zzz_100: is_call = 1;
+      8'b11_001_001: is_ret = 1;
+      8'b11_zzz_000: is_ret = 1;
       8'b11_101_001: is_pchl = 1;
       8'b11_111_011: is_ei = 1;
       8'b11_110_011: is_di = 1;
@@ -1053,10 +1156,8 @@ module register_array #(
 
   reg [2*XLEN-1:0] pc, sp, pc_next, sp_next;
 
-  wire [2*XLEN-1:0] pc_plus_1 = pc + 1;
-
-  wire [       2:0] rp_sel;
-  wire              nib_sel;
+  wire [2:0] rp_sel;
+  wire       nib_sel;
 
   assign {rp_sel, nib_sel} = reg_sel;
 
@@ -1094,6 +1195,10 @@ module register_array #(
         `REG_SEL_L: l_next = wdata;
         `REG_SEL_W: w_next = wdata;
         `REG_SEL_Z: z_next = wdata;
+        `REG_SEL_SP_HI: sp_next[15:8] = wdata;
+        `REG_SEL_SP_LO: sp_next[7:0] = wdata;
+        `REG_SEL_PC_HI: pc_next[15:8] = wdata;
+        `REG_SEL_PC_LO: pc_next[7:0] = wdata;
         default: ;
       endcase
     end else if (swap_hl_de) begin
@@ -1103,11 +1208,11 @@ module register_array #(
       sp_next = {h, l};
     end else if (inc || dec) begin
       case (rp_sel)
+        `RP_SEL_WZ: {w_next, z_next} = inc_dec_result;
         `RP_SEL_BC: {b_next, c_next} = inc_dec_result;
         `RP_SEL_DE: {d_next, e_next} = inc_dec_result;
         `RP_SEL_HL: {h_next, l_next} = inc_dec_result;
         `RP_SEL_SP: sp_next = inc_dec_result;
-        `RP_SEL_WZ: {w_next, z_next} = inc_dec_result;
         `RP_SEL_PC: pc_next = inc_dec_result;
         default:    ;
       endcase
@@ -1311,8 +1416,8 @@ module i8080 (
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
        is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
-       is_ei, is_di, is_nop;
-  wire branch_cond;
+       is_call, is_ret, is_ei, is_di, is_nop;
+  wire use_branch_cond, branch_cond;
 
   instr_decoder #(
       .XLEN(XLEN)
@@ -1352,12 +1457,15 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
+      .is_call   (is_call),
+      .is_ret    (is_ret),
       .is_pchl   (is_pchl),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
 
-      .branch_cond(branch_cond)
+      .use_branch_cond(use_branch_cond),
+      .branch_cond    (branch_cond)
   );
 
   wire       write_adr;
@@ -1408,12 +1516,15 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
+      .is_call   (is_call),
+      .is_ret    (is_ret),
       .is_pchl   (is_pchl),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
 
-      .branch_cond(branch_cond),
+      .use_branch_cond(use_branch_cond),
+      .branch_cond    (branch_cond),
 
       .ready(ready),
       .wwait(wwait),
