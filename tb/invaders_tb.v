@@ -10,18 +10,18 @@ module invaders_tb ();
       .rst_n(rst_n)
   );
 
-  always @(invaders.i8080.control.mcycle) begin
-    if (invaders.i8080.control.mcycle == 0) begin  // M1
-      $display("pc = %h, bc = %h, a = %h, f = %b", invaders.i8080.reg_array.pc, {
-               invaders.i8080.reg_array.b, invaders.i8080.reg_array.c}, invaders.i8080.a,
-               invaders.i8080.flags_reg.data);
+  always @(posedge clk) begin
+    if (invaders.i8080.control.mcycle == 0 && invaders.i8080.control.tstate == 0) begin  // M1
+      $display("pc = %h, hl = %h, a = %h, f = %b, mem = %h", invaders.i8080.adr_reg.data, {
+               invaders.i8080.reg_array.h, invaders.i8080.reg_array.l}, invaders.i8080.a,
+               invaders.i8080.flags_reg.data, invaders.ram.mem[16'h345]);
     end
   end
 
   initial begin
     $dumpvars(0, invaders_tb);
 
-    $display("                       SZ A P C");
+    $display("                                  SZ A P C");
 
     clk   = 0;
     rst_n = 0;
