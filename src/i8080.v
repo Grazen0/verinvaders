@@ -21,6 +21,7 @@
 `define RP_SEL_SP 3'b011
 `define RP_SEL_WZ 3'b100
 `define RP_SEL_PC 3'b101
+`define RP_SEL_ADR 3'b110
 
 `define RP_LO 1'b1
 `define RP_HI 1'b0
@@ -33,38 +34,6 @@
 `define REG_SEL_L {`RP_SEL_HL, `RP_LO}
 `define REG_SEL_W {`RP_SEL_WZ, `RP_HI}
 `define REG_SEL_Z {`RP_SEL_WZ, `RP_LO}
-
-module data_bus_buffer #(
-    parameter XLEN = 8
-) (
-    input wire clk,
-    input wire rst_n,
-
-    inout wire [XLEN-1:0] bus,
-    input wire            out_wenable,
-    input wire            out_enable,
-    input wire            in_enable,
-
-    inout tri [XLEN-1:0] out
-
-);
-  wire [XLEN-1:0] data;
-
-  register #(
-      .WIDTH(XLEN)
-  ) out_reg (
-      .clk  (clk),
-      .rst_n(rst_n),
-
-      .wenable(out_wenable),
-      .oenable(out_enable),
-
-      .in     (bus),
-      .out_tri(out)
-  );
-
-  assign bus = in_enable ? out : {XLEN{1'bz}};
-endmodule
 
 module control (
     input wire clk,
@@ -101,9 +70,11 @@ module control (
     input wire is_inx,
     input wire is_dcx,
     input wire is_dad,
+    input wire is_jmp,
     input wire is_nop,
 
     input  wire ready,
+    output wire wwait,
     output wire sync,
 
     output reg data_in_enable,
@@ -131,6 +102,7 @@ module control (
 
     output reg swap_hl_de,
     output reg cpy_hl_to_sp,
+    output reg write_pc_inc_dec,
 
     output reg [3:0] reg_sel,
     output reg [4:0] alu_control,
@@ -144,6 +116,7 @@ module control (
   localparam T4 = 3'd3;
   localparam T5 = 3'd4;
   localparam TR = 3'd5;
+  localparam TW = 3'd6;
   localparam TZ = 3'dz;
 
   localparam M1 = 3'd0;
@@ -171,49 +144,55 @@ module control (
 
   reg mcycle_end, instr_end;
   reg read_sss, read_ddd, write_ddd;
+  reg wz_as_pc_next;
 
   wire [3:0] sss_ext = {1'b0, sss};
   wire [3:0] ddd_ext = {1'b0, ddd};
   wire [2:0] rp_ext = {1'b0, rp};
 
+  reg wz_as_pc;
+
   always @(*) begin
-    inc_rp          = 0;
-    dec_rp          = 0;
+    inc_rp           = 0;
+    dec_rp           = 0;
 
-    data_in_enable  = 0;
-    data_out_enable = 0;
-    write_data_out  = 0;
+    data_in_enable   = 0;
+    data_out_enable  = 0;
+    write_data_out   = 0;
 
-    a_src           = `A_SRC_BUS;
-    act_src         = `ACT_SRC_A;
-    flags_src       = `FLAGS_SRC_ALU;
+    a_src            = `A_SRC_BUS;
+    act_src          = `ACT_SRC_A;
+    flags_src        = `FLAGS_SRC_ALU;
 
-    reg_sel         = 4'bxxxx;
-    alu_control     = 5'bxxxxx;
+    reg_sel          = 4'bxxxx;
+    alu_control      = 5'bxxxxx;
 
-    read_flags      = 0;
-    write_flags     = 0;
-    write_a         = 0;
-    read_a          = 0;
-    write_act       = 0;
-    read_tmp        = 0;
-    write_tmp       = 0;
-    write_instr     = 0;
-    read_regs       = 0;
-    write_regs      = 0;
-    read_alu        = 0;
+    read_flags       = 0;
+    write_flags      = 0;
+    write_a          = 0;
+    read_a           = 0;
+    write_act        = 0;
+    read_tmp         = 0;
+    write_tmp        = 0;
+    write_instr      = 0;
+    read_regs        = 0;
+    write_regs       = 0;
+    read_alu         = 0;
 
-    swap_hl_de      = 0;
-    cpy_hl_to_sp    = 0;
+    swap_hl_de       = 0;
+    cpy_hl_to_sp     = 0;
+    write_pc_inc_dec = 0;
 
-    write_adr       = 0;
+    write_adr        = 0;
 
-    mcycle_end      = 0;
-    instr_end       = 0;
+    mcycle_end       = 0;
+    instr_end        = 0;
 
-    read_sss        = 0;
-    read_ddd        = 0;
-    write_ddd       = 0;
+    read_sss         = 0;
+    read_ddd         = 0;
+    write_ddd        = 0;
+
+    wz_as_pc_next    = 0;
 
     // verilog_format: off
     casez ({mcycle, tstate})
@@ -222,12 +201,17 @@ module control (
       end
 
       {M1, T1}: begin
-        reg_sel = {`RP_SEL_PC, 1'bx};
-        inc_rp = 1;
+        if (!wz_as_pc) begin
+          reg_sel = {`RP_SEL_PC, 1'bx};
+          inc_rp  = 1;
+        end else begin
+          reg_sel = {`RP_SEL_WZ, 1'bx};
+          write_pc_inc_dec = 1;
+          inc_rp  = 1;
+        end
       end
-      {M1, T2}: begin
+      {M1, T2}, {M1, TW}: begin
         data_in_enable = 1;
-        write_tmp      = 1;
         write_instr    = 1;
       end
       {M1, T3}: begin
@@ -275,7 +259,7 @@ module control (
           end
         end
 
-        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
           mcycle_end = 1;
 
           reg_sel = {`RP_SEL_PC, 1'bx};
@@ -374,7 +358,8 @@ module control (
           end
         end
 
-        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_alu_imm) begin
+        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_alu_imm
+            || is_jmp) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
@@ -391,7 +376,7 @@ module control (
         end
       end
 
-      {M2, T2}: begin
+      {M2, T2}, {M2, TW}: begin
         if (is_mov) begin
           if (is_sss_mem) begin
             data_in_enable = 1;
@@ -417,7 +402,7 @@ module control (
           reg_sel        = {rp_ext, `RP_LO};
         end
 
-        if (is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
           data_in_enable = 1;
           write_regs     = 1;
           reg_sel        = `REG_SEL_Z;
@@ -468,7 +453,7 @@ module control (
           end
         end
 
-        if (is_lxi || is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
           write_adr = 1;
           reg_sel = {`RP_SEL_PC, 1'bx};
         end
@@ -502,7 +487,7 @@ module control (
           write_data_out = 1;
         end
 
-        if (is_lxi || is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
@@ -520,7 +505,7 @@ module control (
           write_tmp = 1;
         end
       end
-      {M3, T2}: begin
+      {M3, T2}, {M3, TW}: begin
         if (is_mvi || is_inr || is_dcr) begin
           data_out_enable = 1;
         end
@@ -531,10 +516,10 @@ module control (
           reg_sel        = {rp_ext, `RP_HI};
         end
 
-        if (is_lda || is_sta || is_lhld || is_shld) begin
+        if (is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
           data_in_enable = 1;
-          write_regs     = 1;
           reg_sel        = `REG_SEL_W;
+          write_regs     = 1;
         end
 
         if (is_dad) begin
@@ -549,7 +534,7 @@ module control (
       {M3, T3}: begin
         mcycle_end = 1; // No instruction has an M3 cycle over 3 T-states long
 
-        if (is_mvi || is_lxi || is_inr || is_dcr) begin
+        if (is_mvi || is_lxi || is_inr || is_dcr || is_dad) begin
           instr_end = 1;
         end
 
@@ -557,6 +542,11 @@ module control (
           reg_sel   = {`RP_SEL_WZ, 1'bx};
           write_adr = 1;
           inc_rp    = 1; // for lhld and shld
+        end
+
+        if (is_jmp) begin
+          wz_as_pc_next = 1;
+          instr_end = 1;
         end
       end
 
@@ -573,7 +563,7 @@ module control (
         end
       end
 
-      {M4, T2}: begin
+      {M4, T2}, {M4, TW}: begin
         if (is_lda) begin
           data_in_enable = 1;
           write_a        = 1;
@@ -615,7 +605,7 @@ module control (
         end
       end
 
-      {M5, T2}: begin
+      {M5, T2}, {M5, TW}: begin
         if (is_lhld) begin
           reg_sel = `REG_SEL_H;
           write_regs = 1;
@@ -666,14 +656,14 @@ module control (
       end
     end
 
-    if (tstate == T2 && !ready) begin
+    if ((tstate == T2 || tstate == TW) && !ready) begin
       mcycle_next = mcycle;
-      tstate_next = tstate;
+      tstate_next = TW;
     end else if (instr_end) begin
       mcycle_next = M1;
       tstate_next = T1;
 
-      reg_sel = {`RP_SEL_PC, 1'bx};
+      reg_sel = {wz_as_pc_next ? `RP_SEL_WZ : `RP_SEL_PC, 1'bx};
       write_adr = 1;
     end else if (mcycle_end) begin
       mcycle_next = mcycle + 1;
@@ -686,10 +676,12 @@ module control (
 
   always @(posedge clk) begin
     if (!rst_n) begin
-      tstate <= TR;
+      tstate   <= TR;
+      wz_as_pc <= 0;
     end else begin
-      tstate <= tstate_next;
-      mcycle <= mcycle_next;
+      tstate   <= tstate_next;
+      mcycle   <= mcycle_next;
+      wz_as_pc <= wz_as_pc_next;
     end
   end
 
@@ -734,6 +726,7 @@ module instr_decoder #(
     output reg is_inx,
     output reg is_dcx,
     output reg is_dad,
+    output reg is_jmp,
     output reg is_nop
 );
   localparam REG_MEM = 3'b110;
@@ -759,6 +752,7 @@ module instr_decoder #(
     is_inx     = 0;
     is_dcx     = 0;
     is_dad     = 0;
+    is_jmp     = 0;
     is_nop     = 0;
 
     casez (instr)
@@ -781,6 +775,7 @@ module instr_decoder #(
       8'b00_zz0_011: is_inx = 1;
       8'b00_zz1_011: is_dcx = 1;
       8'b00_zz1_001: is_dad = 1;
+      8'b11_000_011: is_jmp = 1;
       default:       is_nop = 1;
     endcase
   end
@@ -876,21 +871,28 @@ module alu #(
 
     // TODO: use A flag
     casez (control)
-      5'b00_0zz, 5'b00_111: begin
+      5'b00_0zz, 5'b00_111: begin  // add/adc/sbb/sbc
         {flags_out[`FC], result} = sum;
+        // TODO: set FA flag
         set_pzs_flags            = 1;
       end
-      5'b00_100: begin
-        result        = op_a & op_b;
-        set_pzs_flags = 1;
+      5'b00_100: begin  // ana
+        result         = op_a & op_b;
+        flags_out[`FC] = 0;
+        flags_out[`FA] = 0;
+        set_pzs_flags  = 1;
       end
-      5'b00_101: begin
-        result        = op_a ^ op_b;
-        set_pzs_flags = 1;
+      5'b00_101: begin  // xra
+        result         = op_a ^ op_b;
+        flags_out[`FC] = 0;
+        flags_out[`FA] = 0;
+        set_pzs_flags  = 1;
       end
-      5'b00_110: begin
-        result        = op_a | op_b;
-        set_pzs_flags = 1;
+      5'b00_110: begin  // ora
+        result         = op_a | op_b;
+        flags_out[`FC] = 0;
+        flags_out[`FA] = 0;
+        set_pzs_flags  = 1;
       end
       5'b01_000: begin  // rlc
         result = {op_a[XLEN-2:0], op_a[XLEN-1]};
@@ -916,16 +918,16 @@ module alu #(
         flags_out[`FC] = ~flags_out[`FC];
       end
 
-      5'b10_zz0: begin
+      5'b10_zz0: begin  // inr
         result        = op_b + 1;
         set_pzs_flags = 1;
       end
-      5'b10_zz1: begin
+      5'b10_zz1: begin  // dcr
         result        = op_b - 1;
         set_pzs_flags = 1;
       end
 
-      5'b11_zzz: {flags_out[`FC], result} = sum;
+      5'b11_zzz: {flags_out[`FC], result} = sum;  // add but only set carry, used for dad
 
       default: result = {XLEN{1'bx}};
     endcase
@@ -960,11 +962,12 @@ module register_array #(
     input wire cpy_hl_to_sp,
     input wire inc,
     input wire dec,
-
-    output reg [2*XLEN-1:0] pc
+    input wire write_pc_inc_dec
 );
   reg [XLEN-1:0] w, z, b, c, d, e, h, l;
-  reg  [2*XLEN-1:0] sp;
+  reg [XLEN-1:0] w_next, z_next, b_next, c_next, d_next, e_next, h_next, l_next;
+
+  reg [2*XLEN-1:0] pc, sp, pc_next, sp_next;
 
   wire [2*XLEN-1:0] pc_plus_1 = pc + 1;
 
@@ -985,12 +988,55 @@ module register_array #(
       `RP_SEL_PC: rpdata = pc;
       default:    rpdata = {(2 * XLEN) {1'bx}};
     endcase
+
+    pc_next = pc;
+    sp_next = sp;
+    w_next  = w;
+    z_next  = z;
+    b_next  = b;
+    c_next  = c;
+    d_next  = d;
+    e_next  = e;
+    h_next  = h;
+    l_next  = l;
+
+    if (wenable) begin
+      case (reg_sel)
+        `REG_SEL_B: b_next = wdata;
+        `REG_SEL_C: c_next = wdata;
+        `REG_SEL_D: d_next = wdata;
+        `REG_SEL_E: e_next = wdata;
+        `REG_SEL_H: h_next = wdata;
+        `REG_SEL_L: l_next = wdata;
+        `REG_SEL_W: w_next = wdata;
+        `REG_SEL_Z: z_next = wdata;
+        default: ;
+      endcase
+    end else if (swap_hl_de) begin
+      {h_next, l_next} = {d, e};
+      {d_next, e_next} = {h, l};
+    end else if (cpy_hl_to_sp) begin
+      sp_next = {h, l};
+    end else if (inc || dec) begin
+      case (rp_sel)
+        `RP_SEL_BC: {b_next, c_next} = inc_dec_result;
+        `RP_SEL_DE: {d_next, e_next} = inc_dec_result;
+        `RP_SEL_HL: {h_next, l_next} = inc_dec_result;
+        `RP_SEL_SP: sp_next = inc_dec_result;
+        `RP_SEL_WZ: {w_next, z_next} = inc_dec_result;
+        `RP_SEL_PC: pc_next = inc_dec_result;
+        default:    ;
+      endcase
+    end
+
+    if (write_pc_inc_dec) begin
+      pc_next = inc_dec_result;
+    end
   end
 
   always @(posedge clk) begin
     if (!rst_n) begin
       pc <= 0;
-
       b  <= 1;
       c  <= 2;
       d  <= 3;
@@ -998,34 +1044,16 @@ module register_array #(
       h  <= 5;
       l  <= 6;
     end else begin
-      if (wenable) begin
-        case (reg_sel)
-          `REG_SEL_B: b <= wdata;
-          `REG_SEL_C: c <= wdata;
-          `REG_SEL_D: d <= wdata;
-          `REG_SEL_E: e <= wdata;
-          `REG_SEL_H: h <= wdata;
-          `REG_SEL_L: l <= wdata;
-          `REG_SEL_W: w <= wdata;
-          `REG_SEL_Z: z <= wdata;
-          default: ;
-        endcase
-      end else if (swap_hl_de) begin
-        {h, l} <= {d, e};
-        {d, e} <= {h, l};
-      end else if (cpy_hl_to_sp) begin
-        sp <= {h, l};
-      end else if (inc || dec) begin
-        case (rp_sel)
-          `RP_SEL_BC: {b, c} = inc_dec_result;
-          `RP_SEL_DE: {d, e} = inc_dec_result;
-          `RP_SEL_HL: {h, l} = inc_dec_result;
-          `RP_SEL_SP: sp = inc_dec_result;
-          `RP_SEL_WZ: {w, z} = inc_dec_result;
-          `RP_SEL_PC: pc = inc_dec_result;
-          default:    ;
-        endcase
-      end
+      pc <= pc_next;
+      sp <= sp_next;
+      w  <= w_next;
+      z  <= z_next;
+      b  <= b_next;
+      c  <= c_next;
+      d  <= d_next;
+      e  <= e_next;
+      h  <= h_next;
+      l  <= l_next;
     end
   end
 
@@ -1174,7 +1202,6 @@ module i8080 (
       .out_tri(alu_out_tri)
   );
 
-  wire [2*XLEN-1:0] pc;
   wire [2*XLEN-1:0] regs_out_rp;
 
   register_array #(
@@ -1190,19 +1217,19 @@ module i8080 (
       .rdata  (regs_out),
       .rpdata (regs_out_rp),
 
-      .swap_hl_de  (swap_hl_de),
+      .swap_hl_de(swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
+      .write_pc_inc_dec(write_pc_inc_dec),
 
       .inc(inc_rp),
-      .dec(dec_rp),
-      .pc (pc)
+      .dec(dec_rp)
   );
 
   wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a, is_alu_op_cmp;
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
-       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_nop;
+       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_nop;
 
   instr_decoder #(
       .XLEN(XLEN)
@@ -1239,8 +1266,9 @@ module i8080 (
       .is_dcr    (is_dcr),
       .is_inx    (is_inx),
       .is_dcx    (is_dcx),
-      .is_nop    (is_nop),
-      .is_dad    (is_dad)
+      .is_dad    (is_dad),
+      .is_jmp    (is_jmp),
+      .is_nop    (is_nop)
   );
 
   wire       write_adr;
@@ -1251,8 +1279,7 @@ module i8080 (
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
-  wire swap_hl_de;
-  wire cpy_hl_to_sp;
+  wire swap_hl_de, cpy_hl_to_sp, write_pc_inc_dec;
 
   wire inc_rp, dec_rp;
 
@@ -1291,10 +1318,13 @@ module i8080 (
       .is_inx    (is_inx),
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
+      .is_jmp    (is_jmp),
       .is_nop    (is_nop),
 
       .ready(ready),
-      .sync (sync),
+      .wwait(wwait),
+
+      .sync(sync),
 
       .data_in_enable (data_in_enable),
       .data_out_enable(data_out_enable),
@@ -1312,8 +1342,9 @@ module i8080 (
       .read_regs  (read_regs),
       .write_regs (write_regs),
 
-      .swap_hl_de  (swap_hl_de),
+      .swap_hl_de(swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
+      .write_pc_inc_dec(write_pc_inc_dec),
 
       .reg_sel    (reg_sel),
       .alu_control(alu_control),
@@ -1342,19 +1373,5 @@ module i8080 (
       .out_tri(addr)
   );
 
-  data_bus_buffer #(
-      .XLEN(XLEN)
-  ) data_bus_buffer (
-      .clk  (clk),
-      .rst_n(rst_n),
-
-      .bus        (bus),
-      .out_wenable(write_data_out),
-      .out_enable (data_out_enable),
-      .in_enable  (data_in_enable),
-
-      .out(data)
-  );
-
-  assign write_n = ~write;
+  assign bus = data_in_enable ? data : {XLEN{1'bz}};
 endmodule
