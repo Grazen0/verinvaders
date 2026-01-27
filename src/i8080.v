@@ -35,6 +35,40 @@
 `define REG_SEL_W {`RP_SEL_WZ, `RP_HI}
 `define REG_SEL_Z {`RP_SEL_WZ, `RP_LO}
 
+
+module data_bus_buffer #(
+    parameter XLEN = 8
+) (
+    input wire clk,
+    input wire rst_n,
+
+    inout wire [XLEN-1:0] bus,
+    input wire            out_wenable,
+    input wire            out_enable,
+    input wire            in_enable,
+
+    inout tri [XLEN-1:0] out
+
+);
+  wire [XLEN-1:0] data;
+
+  register #(
+      .WIDTH(XLEN)
+  ) out_reg (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .wenable(out_wenable),
+      .oenable(out_enable),
+
+      .in     (bus),
+      .out_tri(out)
+  );
+
+  assign bus = in_enable ? out : {XLEN{1'bz}};
+endmodule
+
+
 module control (
     input wire clk,
     input wire rst_n,
@@ -71,7 +105,11 @@ module control (
     input wire is_dcx,
     input wire is_dad,
     input wire is_jmp,
+    input wire is_ei,
+    input wire is_di,
     input wire is_nop,
+
+    input wire branch_cond,
 
     input  wire ready,
     output wire wwait,
@@ -151,8 +189,11 @@ module control (
   wire [2:0] rp_ext = {1'b0, rp};
 
   reg wz_as_pc;
+  reg inte, inte_next;
 
   always @(*) begin
+    inte_next        = inte;
+
     inc_rp           = 0;
     dec_rp           = 0;
 
@@ -245,6 +286,12 @@ module control (
           read_ddd  = 1;
           write_tmp = 1;
         end
+
+        if (is_ei) begin
+          inte_next = 1;
+        end else if (is_di) begin
+          inte_next = 0;
+        end
       end
       {M1, T4}: begin
         if (is_mov) begin
@@ -273,7 +320,7 @@ module control (
           write_adr = 1;
         end
 
-        if (is_xchg || is_nop) begin
+        if (is_xchg || is_nop || is_ei || is_di) begin
           instr_end = 1;
         end
 
@@ -545,7 +592,9 @@ module control (
         end
 
         if (is_jmp) begin
-          wz_as_pc_next = 1;
+          if (branch_cond) begin
+            wz_as_pc_next = 1;
+          end
           instr_end = 1;
         end
       end
@@ -676,9 +725,11 @@ module control (
 
   always @(posedge clk) begin
     if (!rst_n) begin
+      inte     <= 0;
       tstate   <= TR;
       wz_as_pc <= 0;
     end else begin
+      inte    <= inte_next;
       tstate   <= tstate_next;
       mcycle   <= mcycle_next;
       wz_as_pc <= wz_as_pc_next;
@@ -694,6 +745,7 @@ module instr_decoder #(
     parameter XLEN = 8
 ) (
     input wire [XLEN-1:0] instr,
+    input wire [XLEN-1:0] flags,
 
     output wire [2:0] sss,
     output wire [2:0] ddd,
@@ -727,12 +779,32 @@ module instr_decoder #(
     output reg is_dcx,
     output reg is_dad,
     output reg is_jmp,
-    output reg is_nop
+    output reg is_ei,
+    output reg is_di,
+    output reg is_nop,
+
+    output reg branch_cond
 );
   localparam REG_MEM = 3'b110;
   localparam REG_A = 3'b111;
 
   always @(*) begin
+    branch_cond = 0;
+
+    case (cc)
+      3'b000:  branch_cond = ~flags[`FZ];
+      3'b001:  branch_cond = flags[`FZ];
+      3'b010:  branch_cond = ~flags[`FC];
+      3'b011:  branch_cond = flags[`FC];
+      3'b100:  branch_cond = ~flags[`FP];
+      3'b101:  branch_cond = flags[`FP];
+      3'b110:  branch_cond = ~flags[`FS];
+      3'b111:  branch_cond = flags[`FS];
+      default: branch_cond = 1'bx;
+    endcase
+
+    branch_cond |= instr[0];
+
     is_mov     = 0;
     is_sphl    = 0;
     is_mvi     = 0;
@@ -753,6 +825,8 @@ module instr_decoder #(
     is_dcx     = 0;
     is_dad     = 0;
     is_jmp     = 0;
+    is_ei      = 0;
+    is_di      = 0;
     is_nop     = 0;
 
     casez (instr)
@@ -776,6 +850,9 @@ module instr_decoder #(
       8'b00_zz1_011: is_dcx = 1;
       8'b00_zz1_001: is_dad = 1;
       8'b11_000_011: is_jmp = 1;
+      8'b11_zzz_010: is_jmp = 1;
+      8'b11_111_011: is_ei = 1;
+      8'b11_110_011: is_di = 1;
       default:       is_nop = 1;
     endcase
   end
@@ -1037,12 +1114,6 @@ module register_array #(
   always @(posedge clk) begin
     if (!rst_n) begin
       pc <= 0;
-      b  <= 1;
-      c  <= 2;
-      d  <= 3;
-      e  <= 4;
-      h  <= 5;
-      l  <= 6;
     end else begin
       pc <= pc_next;
       sp <= sp_next;
@@ -1229,12 +1300,15 @@ module i8080 (
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
-       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_nop;
+       is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp,
+       is_ei, is_di, is_nop;
+  wire branch_cond;
 
   instr_decoder #(
       .XLEN(XLEN)
   ) instr_decoder (
       .instr(instr),
+      .flags(flags),
 
       .is_sss_mem   (is_sss_mem),
       .is_sss_a     (is_sss_a),
@@ -1268,7 +1342,11 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
-      .is_nop    (is_nop)
+      .is_ei     (is_ei),
+      .is_di     (is_di),
+      .is_nop    (is_nop),
+
+      .branch_cond(branch_cond)
   );
 
   wire       write_adr;
@@ -1319,7 +1397,11 @@ module i8080 (
       .is_dcx    (is_dcx),
       .is_dad    (is_dad),
       .is_jmp    (is_jmp),
+      .is_ei     (is_ei),
+      .is_di     (is_di),
       .is_nop    (is_nop),
+
+      .branch_cond(branch_cond),
 
       .ready(ready),
       .wwait(wwait),
@@ -1373,5 +1455,19 @@ module i8080 (
       .out_tri(addr)
   );
 
-  assign bus = data_in_enable ? data : {XLEN{1'bz}};
+  data_bus_buffer #(
+      .XLEN(XLEN)
+  ) data_bus_buffer (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .bus        (bus),
+      .out_wenable(write_data_out),
+      .out_enable (data_out_enable),
+      .in_enable  (data_in_enable),
+
+      .out(data)
+  );
+
+  assign write_n = ~write;
 endmodule
