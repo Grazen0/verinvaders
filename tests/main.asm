@@ -1,20 +1,40 @@
 .org 0x0000
+    jmp     init
 
-    mvi     a, 0x42
+.org 0x0010
+rst_16:
+    nop
+    nop
+    ret
+
 init:
-    add     a
+    lxi     sp, 0x2800
 
-    lxi     h, init
-    pchl
+    mvi     a, 8
+    call    fib
 
 loop:
     jmp     loop
 
-thing:
-    dcr     l
-    jnz     thing
-
-    mvi     a, 0x69
+my_fn:
     nop
-    nop
+    rz
 
+fib:
+    cpi     2
+    rc
+
+    dcr     a
+    push    psw
+    call    fib
+
+    pop     b
+    dcr     b
+    push    psw
+    mov     a, b
+    call    fib
+
+    pop     b
+    add     b
+
+    ret

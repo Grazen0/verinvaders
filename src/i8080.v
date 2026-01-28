@@ -88,6 +88,7 @@ module control (
     input wire is_ddd_mem,
     input wire is_ddd_a,
     input wire is_alu_op_cmp,
+    input wire is_rp_psw,
 
     input wire is_mov,
     input wire is_sphl,
@@ -111,7 +112,10 @@ module control (
     input wire is_jmp,
     input wire is_call,
     input wire is_ret,
+    input wire is_rst,
     input wire is_pchl,
+    input wire is_push,
+    input wire is_pop,
     input wire is_ei,
     input wire is_di,
     input wire is_nop,
@@ -150,6 +154,7 @@ module control (
     output reg cpy_hl_to_sp,
     output reg cpy_hl_to_pc,
     output reg write_pc_inc_dec,
+    output reg write_wz_rst,
 
     output reg [3:0] reg_sel,
     output reg [4:0] alu_control,
@@ -233,6 +238,7 @@ module control (
     cpy_hl_to_sp     = 0;
     cpy_hl_to_pc     = 0;
     write_pc_inc_dec = 0;
+    write_wz_rst     = 0;
 
     write_adr        = 0;
 
@@ -403,12 +409,12 @@ module control (
           mcycle_end = 1;
         end
 
-        if (is_call && branch_cond) begin
+        if ((is_call && branch_cond) || is_rst || is_push) begin
           reg_sel = {`RP_SEL_SP, 1'bx};
           dec_rp = 1;
         end
 
-        if (is_ret && !use_branch_cond) begin
+        if ((is_ret && !use_branch_cond) || is_pop) begin
           mcycle_end = 1;
           reg_sel    = {`RP_SEL_SP, 1'bx};
           write_adr  = 1;
@@ -420,7 +426,6 @@ module control (
 
         if (is_call) begin
           instr_end = 0;
-
           reg_sel   = {`RP_SEL_PC, 1'bx};
           write_adr = 1;
         end
@@ -429,6 +434,13 @@ module control (
           instr_end = 0;
           reg_sel    = {`RP_SEL_SP, 1'bx};
           write_adr  = 1;
+        end
+
+        if (is_rst || is_push) begin
+          instr_end = 0;
+          reg_sel   = {`RP_SEL_SP, 1'bx};
+          dec_rp    = 1;
+          write_adr = 1;
         end
       end
 
@@ -457,9 +469,26 @@ module control (
           write_tmp = 1;
         end
 
-        if (is_ret) begin
+        if (is_ret || is_pop) begin
           reg_sel = {`RP_SEL_SP, 1'bx};
           inc_rp  = 1;
+        end
+
+        if (is_rst) begin
+          reg_sel        = `REG_SEL_PC_HI;
+          read_regs      = 1;
+          write_data_out = 1;
+        end
+
+        if (is_push) begin
+          if (is_rp_psw) begin
+            read_a = 1;
+          end else begin
+            reg_sel   = {rp_ext, `RP_HI};
+            read_regs = 1;
+          end
+
+          write_data_out = 1;
         end
       end
 
@@ -528,6 +557,22 @@ module control (
           reg_sel        = `REG_SEL_Z;
           write_regs     = 1;
         end
+
+        if (is_rst || is_push) begin
+          data_out_enable = 1;
+        end
+
+        if (is_pop) begin
+          data_in_enable = 1;
+
+          if (is_rp_psw) begin
+            flags_src = `FLAGS_SRC_BUS;
+            write_flags = 1;
+          end else begin
+            reg_sel    = {rp_ext, `RP_LO};
+            write_regs = 1;
+          end
+        end
       end
 
       {M2, T3}: begin
@@ -573,7 +618,12 @@ module control (
           write_act = 1;
         end
 
-        if (is_ret) begin
+        if (is_ret || is_pop) begin
+          reg_sel    = {`RP_SEL_SP, 1'bx};
+          write_adr  = 1;
+        end
+
+        if (is_rst || is_push) begin
           reg_sel    = {`RP_SEL_SP, 1'bx};
           write_adr  = 1;
         end
@@ -603,9 +653,26 @@ module control (
           write_tmp = 1;
         end
 
-        if (is_ret) begin
+        if (is_ret || is_pop) begin
           reg_sel = {`RP_SEL_SP, 1'bx};
           inc_rp  = 1;
+        end
+
+        if (is_rst) begin
+          reg_sel = `REG_SEL_PC_LO;
+          read_regs      = 1;
+          write_data_out = 1;
+        end
+
+        if (is_push) begin
+          if (is_rp_psw) begin
+            read_flags = 1;
+          end else begin
+            reg_sel   = {rp_ext, `RP_LO};
+            read_regs = 1;
+          end
+
+          write_data_out = 1;
         end
       end
       {M3, T2}, {M3, TW}: begin
@@ -627,7 +694,7 @@ module control (
 
         if (is_dad) begin
           alu_control = 5'b11001; // TODO: add name to this
-          read_alu   = 1;
+          read_alu    = 1;
 
           reg_sel     = `REG_SEL_H;
           write_regs  = 1;
@@ -639,11 +706,26 @@ module control (
           reg_sel        = `REG_SEL_W;
           write_regs     = 1;
         end
+
+        if (is_rst || is_push) begin
+          data_out_enable = 1;
+        end
+
+        if (is_pop) begin
+          data_in_enable = 1;
+
+          if (is_rp_psw) begin
+            write_a = 1;
+          end else begin
+            reg_sel    = {rp_ext, `RP_HI};
+            write_regs = 1;
+          end
+        end
       end
       {M3, T3}: begin
         mcycle_end = 1; // No instruction has an M3 cycle over 3 T-states long
 
-        if (is_mvi || is_lxi || is_inr || is_dcr || is_dad) begin
+        if (is_mvi || is_lxi || is_inr || is_dcr || is_dad || is_push || is_pop) begin
           instr_end = 1;
         end
 
@@ -670,7 +752,7 @@ module control (
           end
         end
 
-        if (is_ret) begin
+        if (is_ret || is_rst) begin
           instr_end     = 1;
           wz_as_pc_next = 1;
         end
@@ -853,6 +935,7 @@ module instr_decoder #(
     output wire is_ddd_mem,
     output wire is_ddd_a,
     output wire is_alu_op_cmp,
+    output wire is_rp_psw,
 
     output reg is_mov,
     output reg is_sphl,
@@ -876,7 +959,10 @@ module instr_decoder #(
     output reg is_jmp,
     output reg is_call,
     output reg is_ret,
+    output reg is_rst,
     output reg is_pchl,
+    output reg is_push,
+    output reg is_pop,
     output reg is_ei,
     output reg is_di,
     output reg is_nop,
@@ -928,7 +1014,10 @@ module instr_decoder #(
     is_jmp     = 0;
     is_call    = 0;
     is_ret     = 0;
+    is_rst     = 0;
     is_pchl    = 0;
+    is_push    = 0;
+    is_pop     = 0;
     is_ei      = 0;
     is_di      = 0;
     is_nop     = 0;
@@ -959,7 +1048,10 @@ module instr_decoder #(
       8'b11_zzz_100: is_call = 1;
       8'b11_001_001: is_ret = 1;
       8'b11_zzz_000: is_ret = 1;
+      8'b11_zzz_111: is_rst = 1;
       8'b11_101_001: is_pchl = 1;
+      8'b11_zz0_101: is_push = 1;
+      8'b11_zz0_001: is_pop = 1;
       8'b11_111_011: is_ei = 1;
       8'b11_110_011: is_di = 1;
       default:       is_nop = 1;
@@ -977,6 +1069,7 @@ module instr_decoder #(
   assign is_ddd_mem = ddd == REG_MEM;
   assign is_ddd_a = ddd == REG_A;
   assign is_alu_op_cmp = alu_op == 3'b111;
+  assign is_rp_psw = rp == 2'b11;
 endmodule
 
 module decimal_adjust #(
@@ -1149,7 +1242,9 @@ module register_array #(
     input wire cpy_hl_to_pc,
     input wire inc,
     input wire dec,
-    input wire write_pc_inc_dec
+    input wire write_pc_inc_dec,
+    input wire [XLEN-1:0] instr,
+    input wire write_wz_rst
 );
   reg [XLEN-1:0] w, z, b, c, d, e, h, l;
   reg [XLEN-1:0] w_next, z_next, b_next, c_next, d_next, e_next, h_next, l_next;
@@ -1201,11 +1296,6 @@ module register_array #(
         `REG_SEL_PC_LO: pc_next[7:0] = wdata;
         default: ;
       endcase
-    end else if (swap_hl_de) begin
-      {h_next, l_next} = {d, e};
-      {d_next, e_next} = {h, l};
-    end else if (cpy_hl_to_sp) begin
-      sp_next = {h, l};
     end else if (inc || dec) begin
       case (rp_sel)
         `RP_SEL_WZ: {w_next, z_next} = inc_dec_result;
@@ -1216,6 +1306,16 @@ module register_array #(
         `RP_SEL_PC: pc_next = inc_dec_result;
         default:    ;
       endcase
+    end else begin
+      if (swap_hl_de) begin
+        {h_next, l_next} = {d, e};
+        {d_next, e_next} = {h, l};
+      end else if (cpy_hl_to_sp) begin
+        sp_next = {h, l};
+      end else if (write_wz_rst) begin
+        w <= 8'h00;
+        z <= instr & 8'b00_111_000;
+      end
     end
 
     if (write_pc_inc_dec) begin
@@ -1402,21 +1502,23 @@ module i8080 (
       .rdata  (regs_out),
       .rpdata (regs_out_rp),
 
-      .swap_hl_de(swap_hl_de),
-      .cpy_hl_to_sp(cpy_hl_to_sp),
-      .cpy_hl_to_pc(cpy_hl_to_pc),
+      .swap_hl_de      (swap_hl_de),
+      .cpy_hl_to_sp    (cpy_hl_to_sp),
+      .cpy_hl_to_pc    (cpy_hl_to_pc),
       .write_pc_inc_dec(write_pc_inc_dec),
+      .instr           (instr),
+      .write_wz_rst    (write_wz_rst),
 
       .inc(inc_rp),
       .dec(dec_rp)
   );
 
-  wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a, is_alu_op_cmp;
+  wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a, is_alu_op_cmp, is_rp_psw;
   wire [2:0] sss, ddd, cc, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
        is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
-       is_call, is_ret, is_ei, is_di, is_nop;
+       is_call, is_ret, is_rst, is_push, is_pop, is_ei, is_di, is_nop;
   wire use_branch_cond, branch_cond;
 
   instr_decoder #(
@@ -1430,6 +1532,7 @@ module i8080 (
       .is_ddd_mem   (is_ddd_mem),
       .is_ddd_a     (is_ddd_a),
       .is_alu_op_cmp(is_alu_op_cmp),
+      .is_rp_psw    (is_rp_psw),
 
       .sss   (sss),
       .ddd   (ddd),
@@ -1459,7 +1562,10 @@ module i8080 (
       .is_jmp    (is_jmp),
       .is_call   (is_call),
       .is_ret    (is_ret),
+      .is_rst    (is_rst),
       .is_pchl   (is_pchl),
+      .is_push   (is_push),
+      .is_pop    (is_pop),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
@@ -1476,7 +1582,7 @@ module i8080 (
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
-  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, write_pc_inc_dec;
+  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, write_pc_inc_dec, write_wz_rst;
 
   wire inc_rp, dec_rp;
 
@@ -1495,6 +1601,7 @@ module i8080 (
       .is_ddd_mem   (is_ddd_mem),
       .is_ddd_a     (is_ddd_a),
       .is_alu_op_cmp(is_alu_op_cmp),
+      .is_rp_psw    (is_rp_psw),
 
       .is_mov    (is_mov),
       .is_sphl   (is_sphl),
@@ -1518,7 +1625,10 @@ module i8080 (
       .is_jmp    (is_jmp),
       .is_call   (is_call),
       .is_ret    (is_ret),
+      .is_rst    (is_rst),
       .is_pchl   (is_pchl),
+      .is_push   (is_push),
+      .is_pop    (is_pop),
       .is_ei     (is_ei),
       .is_di     (is_di),
       .is_nop    (is_nop),
@@ -1551,6 +1661,7 @@ module i8080 (
       .cpy_hl_to_sp(cpy_hl_to_sp),
       .cpy_hl_to_pc(cpy_hl_to_pc),
       .write_pc_inc_dec(write_pc_inc_dec),
+      .write_wz_rst(write_wz_rst),
 
       .reg_sel    (reg_sel),
       .alu_control(alu_control),
