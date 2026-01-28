@@ -116,8 +116,12 @@ module control (
     input wire is_pchl,
     input wire is_push,
     input wire is_pop,
+    input wire is_xthl,
+    input wire is_in,
+    input wire is_out,
     input wire is_ei,
     input wire is_di,
+    input wire is_hlt,
     input wire is_nop,
 
     input wire use_branch_cond,
@@ -153,7 +157,9 @@ module control (
     output reg swap_hl_de,
     output reg cpy_hl_to_sp,
     output reg cpy_hl_to_pc,
+    output reg cpy_wz_to_hl,
     output reg write_pc_inc_dec,
+    output reg write_wz_dup,
     output reg write_wz_rst,
 
     output reg [3:0] reg_sel,
@@ -169,6 +175,7 @@ module control (
   localparam T5 = 3'd4;
   localparam TR = 3'd5;
   localparam TW = 3'd6;
+  localparam TWH = 3'd7;
   localparam TZ = 3'dz;
 
   localparam M1 = 3'd0;
@@ -186,8 +193,8 @@ module control (
   localparam STATUS_IN_READ = 8'b0100_0010;
   localparam STATUS_OUT_WRITE = 8'b0001_0000;
   localparam STATUS_INT_ACK = 8'b0010_0011;
-  localparam STATUS_HALT_ACK = 8'b1000_1010;
-  localparam STATUS_INT_ACK_W_HALT = 8'b0010_1011;
+  localparam STATUS_hlt_ACK = 8'b1000_1010;
+  localparam STATUS_INT_ACK_W_hlt = 8'b0010_1011;
 
   wire inc_mcycle;
 
@@ -204,6 +211,7 @@ module control (
 
   reg wz_as_pc;
   reg inte, inte_next;
+  reg hlt;
 
   always @(*) begin
     inte_next        = inte;
@@ -237,7 +245,9 @@ module control (
     swap_hl_de       = 0;
     cpy_hl_to_sp     = 0;
     cpy_hl_to_pc     = 0;
+    cpy_wz_to_hl     = 0;
     write_pc_inc_dec = 0;
+    write_wz_dup     = 0;
     write_wz_rst     = 0;
 
     write_adr        = 0;
@@ -251,10 +261,16 @@ module control (
 
     wz_as_pc_next    = 0;
 
+    hlt              = 0;
+
     // verilog_format: off
     casez ({mcycle, tstate})
       {MZ, TR}: begin
         instr_end = 1;
+      end
+
+      {MZ, TWH}: begin
+        hlt = 1;
       end
 
       {M1, T1}: begin
@@ -326,9 +342,9 @@ module control (
           end
         end
 
-        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp) begin
+        if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_jmp
+            || is_in || is_out || is_hlt) begin
           mcycle_end = 1;
-
           reg_sel = {`RP_SEL_PC, 1'bx};
           write_adr = 1;
         end
@@ -414,7 +430,7 @@ module control (
           dec_rp = 1;
         end
 
-        if ((is_ret && !use_branch_cond) || is_pop) begin
+        if ((is_ret && !use_branch_cond) || is_pop || is_xthl) begin
           mcycle_end = 1;
           reg_sel    = {`RP_SEL_SP, 1'bx};
           write_adr  = 1;
@@ -453,7 +469,7 @@ module control (
         end
 
         if (is_mvi || is_lxi || is_lda || is_sta || is_lhld || is_shld || is_alu_imm
-            || is_jmp || is_call) begin
+            || is_jmp || is_call || is_in || is_out) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
           inc_rp = 1;
         end
@@ -469,7 +485,7 @@ module control (
           write_tmp = 1;
         end
 
-        if (is_ret || is_pop) begin
+        if (is_ret || is_pop || is_xthl) begin
           reg_sel = {`RP_SEL_SP, 1'bx};
           inc_rp  = 1;
         end
@@ -518,10 +534,10 @@ module control (
           reg_sel        = {rp_ext, `RP_LO};
         end
 
-        if (is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call) begin
+        if (is_lda || is_sta || is_lhld || is_shld || is_jmp || is_call || is_ret || is_xthl) begin
           data_in_enable = 1;
-          write_regs     = 1;
           reg_sel        = `REG_SEL_Z;
+          write_regs     = 1;
         end
 
         if (is_ldax) begin
@@ -552,12 +568,6 @@ module control (
           write_flags = 1;
         end
 
-        if (is_ret) begin
-          data_in_enable = 1;
-          reg_sel        = `REG_SEL_Z;
-          write_regs     = 1;
-        end
-
         if (is_rst || is_push) begin
           data_out_enable = 1;
         end
@@ -572,6 +582,15 @@ module control (
             reg_sel    = {rp_ext, `RP_LO};
             write_regs = 1;
           end
+        end
+
+        if (is_in || is_out) begin
+          data_in_enable = 1;
+          write_wz_dup   = 1;
+        end
+
+        if (is_hlt) begin
+          hlt = 1;
         end
       end
 
@@ -618,13 +637,18 @@ module control (
           write_act = 1;
         end
 
-        if (is_ret || is_pop) begin
+        if (is_ret || is_pop || is_xthl) begin
           reg_sel    = {`RP_SEL_SP, 1'bx};
           write_adr  = 1;
         end
 
         if (is_rst || is_push) begin
           reg_sel    = {`RP_SEL_SP, 1'bx};
+          write_adr  = 1;
+        end
+
+        if (is_in || is_out) begin
+          reg_sel    = {`RP_SEL_WZ, 1'bx};
           write_adr  = 1;
         end
       end
@@ -674,6 +698,11 @@ module control (
 
           write_data_out = 1;
         end
+
+        if (is_out) begin
+          read_a         = 1;
+          write_data_out = 1;
+        end
       end
       {M3, T2}, {M3, TW}: begin
         if (is_mvi || is_inr || is_dcr) begin
@@ -701,7 +730,7 @@ module control (
           write_flags = 1;
         end
 
-        if (is_ret) begin
+        if (is_ret || is_xthl) begin
           data_in_enable = 1;
           reg_sel        = `REG_SEL_W;
           write_regs     = 1;
@@ -721,11 +750,21 @@ module control (
             write_regs = 1;
           end
         end
+
+        if (is_in) begin
+          data_in_enable = 1;
+          write_a        = 1;
+        end
+
+        if (is_out) begin
+          data_out_enable = 1;
+        end
       end
       {M3, T3}: begin
         mcycle_end = 1; // No instruction has an M3 cycle over 3 T-states long
 
-        if (is_mvi || is_lxi || is_inr || is_dcr || is_dad || is_push || is_pop) begin
+        if (is_mvi || is_lxi || is_inr || is_dcr || is_dad || is_push || is_pop
+            || is_in || is_out) begin
           instr_end = 1;
         end
 
@@ -742,7 +781,7 @@ module control (
           instr_end = 1;
         end
 
-        if (is_call) begin
+        if (is_call || is_xthl) begin
           if (branch_cond) begin
             reg_sel   = {`RP_SEL_SP, 1'bx};
             write_adr = 1;
@@ -775,6 +814,12 @@ module control (
           read_regs      = 1;
           write_data_out = 1;
         end
+
+        if (is_xthl) begin
+          reg_sel        = `REG_SEL_H;
+          read_regs      = 1;
+          write_data_out = 1;
+        end
       end
 
       {M4, T2}, {M4, TW}: begin
@@ -783,7 +828,7 @@ module control (
           write_a        = 1;
         end
 
-        if (is_sta || is_shld || is_call) begin
+        if (is_sta || is_shld || is_call || is_xthl) begin
           data_out_enable = 1;
         end
 
@@ -806,7 +851,7 @@ module control (
           write_adr = 1;
         end
 
-        if (is_call) begin
+        if (is_call || is_xthl) begin
           reg_sel   = {`RP_SEL_SP, 1'bx};
           write_adr = 1;
         end
@@ -824,6 +869,12 @@ module control (
           read_regs = 1;
           write_data_out = 1;
         end
+
+        if (is_xthl) begin
+          reg_sel = `REG_SEL_L;
+          read_regs = 1;
+          write_data_out = 1;
+        end
       end
 
       {M5, T2}, {M5, TW}: begin
@@ -833,7 +884,7 @@ module control (
           data_in_enable = 1;
         end
 
-        if (is_shld || is_call) begin
+        if (is_shld || is_call || is_xthl) begin
           data_out_enable = 1;
         end
       end
@@ -847,6 +898,12 @@ module control (
           instr_end = 1;
           wz_as_pc_next = 1;
         end
+      end
+      {M5, T4}: begin // implies is_xthl
+          cpy_wz_to_hl = 1;
+      end
+      {M5, T5}: begin // implies is_xthl
+        instr_end = 1;
       end
 
       default: begin
@@ -882,7 +939,10 @@ module control (
       end
     end
 
-    if ((tstate == T2 || tstate == TW) && !ready) begin
+    if (hlt) begin
+      mcycle_next = M1;
+      tstate_next = TWH;
+    end else if ((tstate == T2 || tstate == TW) && !ready) begin
       mcycle_next = mcycle;
       tstate_next = TW;
     end else if (instr_end) begin
@@ -963,8 +1023,12 @@ module instr_decoder #(
     output reg is_pchl,
     output reg is_push,
     output reg is_pop,
+    output reg is_xthl,
+    output reg is_in,
+    output reg is_out,
     output reg is_ei,
     output reg is_di,
+    output reg is_hlt,
     output reg is_nop,
 
     output wire use_branch_cond,
@@ -1018,11 +1082,16 @@ module instr_decoder #(
     is_pchl    = 0;
     is_push    = 0;
     is_pop     = 0;
+    is_xthl    = 0;
+    is_in      = 0;
+    is_out     = 0;
     is_ei      = 0;
     is_di      = 0;
+    is_hlt     = 0;
     is_nop     = 0;
 
     casez (instr)
+      8'b01_110_110: is_hlt = 1;
       8'b01_zzz_zzz: is_mov = 1;
       8'b11_111_001: is_sphl = 1;
       8'b00_zzz_110: is_mvi = 1;
@@ -1052,6 +1121,9 @@ module instr_decoder #(
       8'b11_101_001: is_pchl = 1;
       8'b11_zz0_101: is_push = 1;
       8'b11_zz0_001: is_pop = 1;
+      8'b11_100_011: is_xthl = 1;
+      8'b11_011_011: is_in = 1;
+      8'b11_010_011: is_out = 1;
       8'b11_111_011: is_ei = 1;
       8'b11_110_011: is_di = 1;
       default:       is_nop = 1;
@@ -1240,10 +1312,12 @@ module register_array #(
     input wire swap_hl_de,
     input wire cpy_hl_to_sp,
     input wire cpy_hl_to_pc,
+    input wire cpy_wz_to_hl,
     input wire inc,
     input wire dec,
     input wire write_pc_inc_dec,
     input wire [XLEN-1:0] instr,
+    input wire write_wz_dup,
     input wire write_wz_rst
 );
   reg [XLEN-1:0] w, z, b, c, d, e, h, l;
@@ -1310,11 +1384,22 @@ module register_array #(
       if (swap_hl_de) begin
         {h_next, l_next} = {d, e};
         {d_next, e_next} = {h, l};
-      end else if (cpy_hl_to_sp) begin
+      end
+
+      if (cpy_hl_to_sp) begin
         sp_next = {h, l};
-      end else if (write_wz_rst) begin
-        w <= 8'h00;
-        z <= instr & 8'b00_111_000;
+      end
+
+      if (write_wz_rst) begin
+        w_next = 8'h00;
+        z_next = instr & 8'b00_111_000;
+      end else if (write_wz_dup) begin
+        w_next = wdata;
+        z_next = wdata;
+      end
+
+      if (cpy_wz_to_hl) begin
+        {h_next, l_next} = {w, z};
       end
     end
 
@@ -1505,8 +1590,10 @@ module i8080 (
       .swap_hl_de      (swap_hl_de),
       .cpy_hl_to_sp    (cpy_hl_to_sp),
       .cpy_hl_to_pc    (cpy_hl_to_pc),
+      .cpy_wz_to_hl    (cpy_wz_to_hl),
       .write_pc_inc_dec(write_pc_inc_dec),
       .instr           (instr),
+      .write_wz_dup    (write_wz_dup),
       .write_wz_rst    (write_wz_rst),
 
       .inc(inc_rp),
@@ -1518,7 +1605,7 @@ module i8080 (
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
        is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
-       is_call, is_ret, is_rst, is_push, is_pop, is_ei, is_di, is_nop;
+       is_call, is_ret, is_rst, is_push, is_pop, is_xthl, is_in, is_out, is_ei, is_di, is_hlt, is_nop;
   wire use_branch_cond, branch_cond;
 
   instr_decoder #(
@@ -1566,8 +1653,12 @@ module i8080 (
       .is_pchl   (is_pchl),
       .is_push   (is_push),
       .is_pop    (is_pop),
+      .is_xthl   (is_xthl),
+      .is_in     (is_in),
+      .is_out    (is_out),
       .is_ei     (is_ei),
       .is_di     (is_di),
+      .is_hlt    (is_hlt),
       .is_nop    (is_nop),
 
       .use_branch_cond(use_branch_cond),
@@ -1582,7 +1673,8 @@ module i8080 (
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
-  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, write_pc_inc_dec, write_wz_rst;
+  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, cpy_wz_to_hl, write_pc_inc_dec,
+    write_wz_dup, write_wz_rst;
 
   wire inc_rp, dec_rp;
 
@@ -1629,8 +1721,12 @@ module i8080 (
       .is_pchl   (is_pchl),
       .is_push   (is_push),
       .is_pop    (is_pop),
+      .is_xthl   (is_xthl),
+      .is_in     (is_in),
+      .is_out    (is_out),
       .is_ei     (is_ei),
       .is_di     (is_di),
+      .is_hlt    (is_hlt),
       .is_nop    (is_nop),
 
       .use_branch_cond(use_branch_cond),
@@ -1660,7 +1756,9 @@ module i8080 (
       .swap_hl_de(swap_hl_de),
       .cpy_hl_to_sp(cpy_hl_to_sp),
       .cpy_hl_to_pc(cpy_hl_to_pc),
+      .cpy_wz_to_hl(cpy_wz_to_hl),
       .write_pc_inc_dec(write_pc_inc_dec),
+      .write_wz_dup(write_wz_dup),
       .write_wz_rst(write_wz_rst),
 
       .reg_sel    (reg_sel),
