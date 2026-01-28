@@ -1,44 +1,6 @@
 `default_nettype none `timescale 1ns / 1ps
 
-`define FC 0
-`define FP 2
-`define FA 4 // TODO: implement this flag
-`define FZ 6
-`define FS 7
-
-`define FLAGS_SRC_ALU 1'b0
-`define FLAGS_SRC_BUS 1'b1
-
-`define A_SRC_ALU 1'b0
-`define A_SRC_BUS 1'b1
-
-`define ACT_SRC_A 1'b0
-`define ACT_SRC_BUS 1'b1
-
-`define RP_SEL_BC 3'b000
-`define RP_SEL_DE 3'b001
-`define RP_SEL_HL 3'b010
-`define RP_SEL_SP 3'b011
-`define RP_SEL_WZ 3'b100
-`define RP_SEL_PC 3'b101
-`define RP_SEL_ADR 3'b110
-
-`define RP_LO 1'b1
-`define RP_HI 1'b0
-
-`define REG_SEL_B {`RP_SEL_BC, `RP_HI}
-`define REG_SEL_C {`RP_SEL_BC, `RP_LO}
-`define REG_SEL_D {`RP_SEL_DE, `RP_HI}
-`define REG_SEL_E {`RP_SEL_DE, `RP_LO}
-`define REG_SEL_H {`RP_SEL_HL, `RP_HI}
-`define REG_SEL_L {`RP_SEL_HL, `RP_LO}
-`define REG_SEL_W {`RP_SEL_WZ, `RP_HI}
-`define REG_SEL_Z {`RP_SEL_WZ, `RP_LO}
-`define REG_SEL_SP_HI {`RP_SEL_SP, `RP_HI}
-`define REG_SEL_SP_LO {`RP_SEL_SP, `RP_LO}
-`define REG_SEL_PC_HI {`RP_SEL_PC, `RP_HI}
-`define REG_SEL_PC_LO {`RP_SEL_PC, `RP_LO}
-
+`include "i8080.vh"
 
 module data_bus_buffer #(
     parameter XLEN = 8
@@ -47,6 +9,8 @@ module data_bus_buffer #(
     input wire rst_n,
 
     inout wire [XLEN-1:0] bus,
+    input wire            sync,
+    inout wire [XLEN-1:0] status,
     input wire            out_wenable,
     input wire            out_enable,
     input wire            in_enable,
@@ -54,8 +18,6 @@ module data_bus_buffer #(
     inout tri [XLEN-1:0] out
 
 );
-  wire [XLEN-1:0] data;
-
   register #(
       .WIDTH(XLEN)
   ) out_reg (
@@ -69,11 +31,14 @@ module data_bus_buffer #(
       .out_tri(out)
   );
 
+  assign out = sync ? status : {XLEN{1'bz}};
   assign bus = in_enable ? out : {XLEN{1'bz}};
 endmodule
 
 
-module control (
+module control #(
+    parameter XLEN = 8
+) (
     input wire clk,
     input wire rst_n,
 
@@ -127,6 +92,7 @@ module control (
     input wire use_branch_cond,
     input wire branch_cond,
 
+    input  wire iint,
     input  wire ready,
     output wire wwait,
     output wire sync,
@@ -158,7 +124,7 @@ module control (
     output reg cpy_hl_to_sp,
     output reg cpy_hl_to_pc,
     output reg cpy_wz_to_hl,
-    output reg write_pc_inc_dec,
+    output reg cpy_wz_next_to_pc,
     output reg write_wz_dup,
     output reg write_wz_rst,
 
@@ -166,7 +132,9 @@ module control (
     output reg [4:0] alu_control,
     output reg       write_adr,
     output reg       inc_rp,
-    output reg       dec_rp
+    output reg       dec_rp,
+
+    output reg [XLEN-1:0] status
 );
   localparam T1 = 3'd0;
   localparam T2 = 3'd1;
@@ -185,17 +153,6 @@ module control (
   localparam M5 = 3'd4;
   localparam MZ = 3'dz;
 
-  localparam STATUS_INSTR_FETCH = 8'b1010_0010;
-  localparam STATUS_MEM_READ = 8'b1000_0010;
-  localparam STATUS_MEM_WRITE = 8'b0000_0000;
-  localparam STATUS_STACK_READ = 8'b1000_0110;
-  localparam STATUS_STACK_WRITE = 8'b0000_0100;
-  localparam STATUS_IN_READ = 8'b0100_0010;
-  localparam STATUS_OUT_WRITE = 8'b0001_0000;
-  localparam STATUS_INT_ACK = 8'b0010_0011;
-  localparam STATUS_hlt_ACK = 8'b1000_1010;
-  localparam STATUS_INT_ACK_W_hlt = 8'b0010_1011;
-
   wire inc_mcycle;
 
   reg [2:0] tstate, tstate_next;
@@ -211,57 +168,72 @@ module control (
 
   reg wz_as_pc;
   reg inte, inte_next;
+  reg iint_prev, iint_prev_next;
+  reg int_ff, int_ff_next;
   reg hlt;
 
+  reg [XLEN-1:0] status_next;
+
   always @(*) begin
-    inte_next        = inte;
+    inte_next                 = inte;
+    int_ff_next               = int_ff;
+    iint_prev_next            = iint;
 
-    inc_rp           = 0;
-    dec_rp           = 0;
+    status_next               = status;
+    status_next[`STATUS_INTA] = 0;
+    status_next[`STATUS_INP]  = 0;
+    status_next[`STATUS_OUT]  = 0;
 
-    data_in_enable   = 0;
-    data_out_enable  = 0;
-    write_data_out   = 0;
+    inc_rp                    = 0;
+    dec_rp                    = 0;
 
-    a_src            = `A_SRC_BUS;
-    act_src          = `ACT_SRC_A;
-    flags_src        = `FLAGS_SRC_ALU;
+    data_in_enable            = 0;
+    data_out_enable           = 0;
+    write_data_out            = 0;
 
-    reg_sel          = 4'bxxxx;
-    alu_control      = 5'bxxxxx;
+    a_src                     = `A_SRC_BUS;
+    act_src                   = `ACT_SRC_A;
+    flags_src                 = `FLAGS_SRC_ALU;
 
-    read_flags       = 0;
-    write_flags      = 0;
-    write_a          = 0;
-    read_a           = 0;
-    write_act        = 0;
-    read_tmp         = 0;
-    write_tmp        = 0;
-    write_instr      = 0;
-    read_regs        = 0;
-    write_regs       = 0;
-    read_alu         = 0;
+    reg_sel                   = 4'bxxxx;
+    alu_control               = 5'bxxxxx;
 
-    swap_hl_de       = 0;
-    cpy_hl_to_sp     = 0;
-    cpy_hl_to_pc     = 0;
-    cpy_wz_to_hl     = 0;
-    write_pc_inc_dec = 0;
-    write_wz_dup     = 0;
-    write_wz_rst     = 0;
+    read_flags                = 0;
+    write_flags               = 0;
+    write_a                   = 0;
+    read_a                    = 0;
+    write_act                 = 0;
+    read_tmp                  = 0;
+    write_tmp                 = 0;
+    write_instr               = 0;
+    read_regs                 = 0;
+    write_regs                = 0;
+    read_alu                  = 0;
 
-    write_adr        = 0;
+    swap_hl_de                = 0;
+    cpy_hl_to_sp              = 0;
+    cpy_hl_to_pc              = 0;
+    cpy_wz_to_hl              = 0;
+    cpy_wz_next_to_pc         = 0;
+    write_wz_dup              = 0;
+    write_wz_rst              = 0;
 
-    mcycle_end       = 0;
-    instr_end        = 0;
+    write_adr                 = 0;
 
-    read_sss         = 0;
-    read_ddd         = 0;
-    write_ddd        = 0;
+    mcycle_end                = 0;
+    instr_end                 = 0;
 
-    wz_as_pc_next    = 0;
+    read_sss                  = 0;
+    read_ddd                  = 0;
+    write_ddd                 = 0;
 
-    hlt              = 0;
+    wz_as_pc_next             = 0;
+
+    hlt                       = 0;
+
+    if (iint && ~iint_prev) begin
+      int_ff_next = 1;
+    end
 
     // verilog_format: off
     casez ({mcycle, tstate})
@@ -276,11 +248,13 @@ module control (
       {M1, T1}: begin
         if (!wz_as_pc) begin
           reg_sel = {`RP_SEL_PC, 1'bx};
-          inc_rp  = 1;
         end else begin
-          reg_sel = {`RP_SEL_WZ, 1'bx};
-          write_pc_inc_dec = 1;
-          inc_rp  = 1;
+          reg_sel           = {`RP_SEL_WZ, 1'bx};
+          cpy_wz_next_to_pc = 1;
+        end
+
+        if (!status[`STATUS_INTA]) begin
+          inc_rp = 1;
         end
       end
       {M1, T2}, {M1, TW}: begin
@@ -347,6 +321,10 @@ module control (
           mcycle_end = 1;
           reg_sel = {`RP_SEL_PC, 1'bx};
           write_adr = 1;
+        end
+
+        if (is_hlt) begin
+          status_next[`STATUS_HLTA] = 1;
         end
 
         if (is_ldax || is_stax) begin
@@ -651,6 +629,9 @@ module control (
           reg_sel    = {`RP_SEL_WZ, 1'bx};
           write_adr  = 1;
         end
+
+        if (is_in) status_next[`STATUS_INP] = 1;
+        if (is_out) status_next[`STATUS_OUT] = 1;
       end
 
       {M3, T1}: begin
@@ -736,8 +717,13 @@ module control (
           write_regs     = 1;
         end
 
-        if (is_rst || is_push) begin
+        if (is_push) begin
           data_out_enable = 1;
+        end
+
+        if (is_rst) begin
+          data_out_enable = 1;
+          write_wz_rst    = 1;
         end
 
         if (is_pop) begin
@@ -942,6 +928,16 @@ module control (
     if (hlt) begin
       mcycle_next = M1;
       tstate_next = TWH;
+
+      if (int_ff) begin
+        int_ff_next = 0;
+        tstate_next = T1;
+
+        reg_sel = {`RP_SEL_PC, 1'bx};
+        write_adr = 1;
+
+        status_next[`STATUS_INTA] = 1;
+      end
     end else if ((tstate == T2 || tstate == TW) && !ready) begin
       mcycle_next = mcycle;
       tstate_next = TW;
@@ -951,6 +947,11 @@ module control (
 
       reg_sel = {wz_as_pc_next ? `RP_SEL_WZ : `RP_SEL_PC, 1'bx};
       write_adr = 1;
+
+      if (int_ff) begin
+        int_ff_next = 0;
+        status_next[`STATUS_INTA] = 1;
+      end
     end else if (mcycle_end) begin
       mcycle_next = mcycle + 1;
       tstate_next = T1;
@@ -958,18 +959,26 @@ module control (
       mcycle_next = mcycle;
       tstate_next = tstate + 1;
     end
+
+    status_next[`STATUS_M1] = mcycle_next == M1;
   end
 
   always @(posedge clk) begin
     if (!rst_n) begin
-      inte     <= 0;
-      tstate   <= TR;
-      wz_as_pc <= 0;
+      inte      <= 0;
+      int_ff    <= 0;
+      iint_prev <= 0;
+      status    <= 0;
+      tstate    <= TR;
+      wz_as_pc  <= 0;
     end else begin
-      inte    <= inte_next;
-      tstate   <= tstate_next;
-      mcycle   <= mcycle_next;
-      wz_as_pc <= wz_as_pc_next;
+      inte      <= inte_next;
+      int_ff    <= int_ff_next;
+      iint_prev <= iint_prev_next;
+      status    <= status_next;
+      tstate    <= tstate_next;
+      mcycle    <= mcycle_next;
+      wz_as_pc  <= wz_as_pc_next;
     end
   end
 
@@ -1315,7 +1324,7 @@ module register_array #(
     input wire cpy_wz_to_hl,
     input wire inc,
     input wire dec,
-    input wire write_pc_inc_dec,
+    input wire cpy_wz_next_to_pc,
     input wire [XLEN-1:0] instr,
     input wire write_wz_dup,
     input wire write_wz_rst
@@ -1403,8 +1412,8 @@ module register_array #(
       end
     end
 
-    if (write_pc_inc_dec) begin
-      pc_next = inc_dec_result;
+    if (cpy_wz_next_to_pc) begin
+      pc_next = {w_next, z_next};
     end else if (cpy_hl_to_pc) begin
       pc_next = {h, l};
     end
@@ -1587,14 +1596,14 @@ module i8080 (
       .rdata  (regs_out),
       .rpdata (regs_out_rp),
 
-      .swap_hl_de      (swap_hl_de),
-      .cpy_hl_to_sp    (cpy_hl_to_sp),
-      .cpy_hl_to_pc    (cpy_hl_to_pc),
-      .cpy_wz_to_hl    (cpy_wz_to_hl),
-      .write_pc_inc_dec(write_pc_inc_dec),
-      .instr           (instr),
-      .write_wz_dup    (write_wz_dup),
-      .write_wz_rst    (write_wz_rst),
+      .swap_hl_de       (swap_hl_de),
+      .cpy_hl_to_sp     (cpy_hl_to_sp),
+      .cpy_hl_to_pc     (cpy_hl_to_pc),
+      .cpy_wz_to_hl     (cpy_wz_to_hl),
+      .cpy_wz_next_to_pc(cpy_wz_next_to_pc),
+      .instr            (instr),
+      .write_wz_dup     (write_wz_dup),
+      .write_wz_rst     (write_wz_rst),
 
       .inc(inc_rp),
       .dec(dec_rp)
@@ -1605,7 +1614,8 @@ module i8080 (
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
        is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
-       is_call, is_ret, is_rst, is_push, is_pop, is_xthl, is_in, is_out, is_ei, is_di, is_hlt, is_nop;
+       is_call, is_ret, is_rst, is_push, is_pop, is_xthl, is_in, is_out, is_ei, is_di, is_hlt,
+       is_nop;
   wire use_branch_cond, branch_cond;
 
   instr_decoder #(
@@ -1665,6 +1675,17 @@ module i8080 (
       .branch_cond    (branch_cond)
   );
 
+  wire int_sync;
+
+  synchronizer int_synchronizer (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .in (iint),
+      .out(int_sync)
+  );
+
+
   wire       write_adr;
   wire [3:0] reg_sel;
   wire [4:0] alu_control;
@@ -1673,12 +1694,15 @@ module i8080 (
 
   wire data_in_enable, data_out_enable;
   wire write_data_out;
-  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, cpy_wz_to_hl, write_pc_inc_dec,
+  wire swap_hl_de, cpy_hl_to_sp, cpy_hl_to_pc, cpy_wz_to_hl, cpy_wz_next_to_pc,
     write_wz_dup, write_wz_rst;
 
   wire inc_rp, dec_rp;
+  wire [XLEN-1:0] status;
 
-  control control (
+  control #(
+      .XLEN(XLEN)
+  ) control (
       .clk  (clk),
       .rst_n(rst_n),
 
@@ -1732,10 +1756,12 @@ module i8080 (
       .use_branch_cond(use_branch_cond),
       .branch_cond    (branch_cond),
 
+      .iint (int_sync),
       .ready(ready),
       .wwait(wwait),
 
-      .sync(sync),
+      .sync  (sync),
+      .status(status),
 
       .data_in_enable (data_in_enable),
       .data_out_enable(data_out_enable),
@@ -1753,13 +1779,13 @@ module i8080 (
       .read_regs  (read_regs),
       .write_regs (write_regs),
 
-      .swap_hl_de(swap_hl_de),
-      .cpy_hl_to_sp(cpy_hl_to_sp),
-      .cpy_hl_to_pc(cpy_hl_to_pc),
-      .cpy_wz_to_hl(cpy_wz_to_hl),
-      .write_pc_inc_dec(write_pc_inc_dec),
-      .write_wz_dup(write_wz_dup),
-      .write_wz_rst(write_wz_rst),
+      .swap_hl_de       (swap_hl_de),
+      .cpy_hl_to_sp     (cpy_hl_to_sp),
+      .cpy_hl_to_pc     (cpy_hl_to_pc),
+      .cpy_wz_to_hl     (cpy_wz_to_hl),
+      .cpy_wz_next_to_pc(cpy_wz_next_to_pc),
+      .write_wz_dup     (write_wz_dup),
+      .write_wz_rst     (write_wz_rst),
 
       .reg_sel    (reg_sel),
       .alu_control(alu_control),
@@ -1795,6 +1821,8 @@ module i8080 (
       .rst_n(rst_n),
 
       .bus        (bus),
+      .status     (status),
+      .sync       (sync),
       .out_wenable(write_data_out),
       .out_enable (data_out_enable),
       .in_enable  (data_in_enable),
