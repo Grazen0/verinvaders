@@ -45,7 +45,6 @@ module control #(
     input wire [2:0] sss,
     input wire [2:0] ddd,
     input wire [1:0] rp,
-    input wire [2:0] cc,
     input wire [2:0] alu_op,
 
     input wire is_sss_mem,
@@ -231,7 +230,7 @@ module control #(
 
     hlt                       = 0;
 
-    if (iint && ~iint_prev) begin
+    if (inte && iint && ~iint_prev) begin
       int_ff_next = 1;
     end
 
@@ -893,7 +892,7 @@ module control #(
       end
 
       default: begin
-        // $display("oopsie daisy (mcycle = %h, tstate = %h)", mcycle, tstate);
+        $display("oopsie daisy (mcycle = %h, tstate = %h)", mcycle, tstate);
       end
     endcase
     // verilog_format: on
@@ -996,7 +995,6 @@ module instr_decoder #(
     output wire [2:0] sss,
     output wire [2:0] ddd,
     output wire [1:0] rp,
-    output wire [2:0] cc,
     output wire [2:0] alu_op,
 
     output wire is_sss_mem,
@@ -1046,11 +1044,11 @@ module instr_decoder #(
   localparam REG_MEM = 3'b110;
   localparam REG_A = 3'b111;
 
+  wire [2:0] cc = instr[5:3];
+
   assign use_branch_cond = ~instr[0];
 
   always @(*) begin
-    branch_cond = 0;
-
     case (cc)
       3'b000:  branch_cond = ~flags[`FZ];
       3'b001:  branch_cond = flags[`FZ];
@@ -1063,41 +1061,41 @@ module instr_decoder #(
       default: branch_cond = 1'bx;
     endcase
 
-    branch_cond |= instr[0];
+    branch_cond = branch_cond | instr[0];
 
-    is_mov     = 0;
-    is_sphl    = 0;
-    is_mvi     = 0;
-    is_lxi     = 0;
-    is_lda     = 0;
-    is_sta     = 0;
-    is_lhld    = 0;
-    is_shld    = 0;
-    is_ldax    = 0;
-    is_stax    = 0;
-    is_xchg    = 0;
-    is_alu_reg = 0;
-    is_alu_imm = 0;
-    is_alu_alt = 0;
-    is_inr     = 0;
-    is_dcr     = 0;
-    is_inx     = 0;
-    is_dcx     = 0;
-    is_dad     = 0;
-    is_jmp     = 0;
-    is_call    = 0;
-    is_ret     = 0;
-    is_rst     = 0;
-    is_pchl    = 0;
-    is_push    = 0;
-    is_pop     = 0;
-    is_xthl    = 0;
-    is_in      = 0;
-    is_out     = 0;
-    is_ei      = 0;
-    is_di      = 0;
-    is_hlt     = 0;
-    is_nop     = 0;
+    is_mov      = 0;
+    is_sphl     = 0;
+    is_mvi      = 0;
+    is_lxi      = 0;
+    is_lda      = 0;
+    is_sta      = 0;
+    is_lhld     = 0;
+    is_shld     = 0;
+    is_ldax     = 0;
+    is_stax     = 0;
+    is_xchg     = 0;
+    is_alu_reg  = 0;
+    is_alu_imm  = 0;
+    is_alu_alt  = 0;
+    is_inr      = 0;
+    is_dcr      = 0;
+    is_inx      = 0;
+    is_dcx      = 0;
+    is_dad      = 0;
+    is_jmp      = 0;
+    is_call     = 0;
+    is_ret      = 0;
+    is_rst      = 0;
+    is_pchl     = 0;
+    is_push     = 0;
+    is_pop      = 0;
+    is_xthl     = 0;
+    is_in       = 0;
+    is_out      = 0;
+    is_ei       = 0;
+    is_di       = 0;
+    is_hlt      = 0;
+    is_nop      = 0;
 
     casez (instr)
       8'b01_110_110: is_hlt = 1;
@@ -1142,7 +1140,6 @@ module instr_decoder #(
   assign sss = instr[2:0];
   assign ddd = instr[5:3];
   assign rp = instr[5:4];
-  assign cc = instr[5:3];
   assign alu_op = instr[5:3];
 
   assign is_sss_mem = sss == REG_MEM;
@@ -1182,6 +1179,26 @@ module decimal_adjust #(
   assign out = {d1, d0};
 endmodule
 
+module adder #(
+    parameter XLEN = 8
+) (
+    input wire [XLEN-1:0] op_a,
+    input wire [XLEN-1:0] op_b,
+    input wire            carry_in,
+
+    output reg [XLEN-1:0] result
+);
+  reg [XLEN:0] carry;
+  integer i;
+
+  always @(*) begin
+    carry[0] = carry_in;
+
+    for (i = 0; i < XLEN; i = i + 1) begin
+      {carry[i+1], result} = op_a[i] + op_b[i] + carry[i];
+    end
+  end
+endmodule
 
 module alu #(
     parameter XLEN = 8
@@ -1208,6 +1225,8 @@ module alu #(
   wire [  XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
   wire [  XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
 
+  // TODO: remove unnecessary extra sum just for the aux carry
+  wire [XLEN/2:0] aux_sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
   wire [  XLEN:0] sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
 
   reg             set_pzs_flags;
@@ -1229,11 +1248,10 @@ module alu #(
     flags_out = flags_in;
     set_pzs_flags = 0;
 
-    // TODO: use A flag
     casez (control)
       5'b00_0zz, 5'b00_111: begin  // add/adc/sbb/sbc
         {flags_out[`FC], result} = sum;
-        // TODO: set FA flag
+        flags_out[`FA]           = aux_sum[XLEN/2];
         set_pzs_flags            = 1;
       end
       5'b00_100: begin  // ana
@@ -1255,17 +1273,17 @@ module alu #(
         set_pzs_flags  = 1;
       end
       5'b01_000: begin  // rlc
-        result = {op_a[XLEN-2:0], op_a[XLEN-1]};
+        result         = {op_a[XLEN-2:0], op_a[XLEN-1]};
         flags_out[`FC] = op_a[XLEN-1];
       end
       5'b01_001: begin  // rrc
-        result = {op_a[0], op_a[XLEN-1:1]};
+        result         = {op_a[0], op_a[XLEN-1:1]};
         flags_out[`FC] = op_a[0];
       end
       5'b01_010: {flags_out[`FC], result} = {op_a, flags_out[`FC]};  // ral
       5'b01_011: {result, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
       5'b01_100: begin  // daa
-        result = daa_out;
+        result    = daa_out;
         flags_out = daa_flags_out;
       end
       5'b01_101: result = ~op_a;  // cma
@@ -1441,7 +1459,9 @@ module register_array #(
   assign rdata = oenable ? out : {XLEN{1'bz}};
 endmodule
 
-module i8080 (
+module i8080 #(
+    parameter XLEN = 8
+) (
     input wire clk,
     input wire rst_n,
 
@@ -1462,8 +1482,6 @@ module i8080 (
     output wire dbin,
     output wire write_n
 );
-  localparam XLEN = 8;
-
   tri [XLEN-1:0] bus;
 
   tri [XLEN-1:0] flags_tri;
@@ -1560,7 +1578,7 @@ module i8080 (
       .wenable(write_instr),
       .oenable(1'b1),
 
-      .in(bus),
+      .in     (bus),
       .out_tri(instr)
   );
 
@@ -1610,7 +1628,7 @@ module i8080 (
   );
 
   wire is_sss_mem, is_sss_a, is_ddd_mem, is_ddd_a, is_alu_op_cmp, is_rp_psw;
-  wire [2:0] sss, ddd, cc, alu_op;
+  wire [2:0] sss, ddd, alu_op;
   wire [1:0] rp;
   wire is_mov, is_sphl, is_mvi, is_lxi, is_lda, is_sta, is_lhld, is_shld, is_ldax, is_stax, is_xchg,
        is_alu_reg, is_alu_imm, is_alu_alt, is_inr, is_dcr, is_inx, is_dcx, is_dad, is_jmp, is_pchl,
@@ -1634,7 +1652,6 @@ module i8080 (
       .sss   (sss),
       .ddd   (ddd),
       .rp    (rp),
-      .cc    (cc),
       .alu_op(alu_op),
 
       .is_mov    (is_mov),
@@ -1709,7 +1726,6 @@ module i8080 (
       .sss   (sss),
       .ddd   (ddd),
       .rp    (rp),
-      .cc    (cc),
       .alu_op(alu_op),
 
       .is_sss_mem   (is_sss_mem),

@@ -6,7 +6,7 @@ EXECS := $(patsubst %.asm,$(BUILD_DIR)/%,$(SRCS))
 LISTS := $(patsubst %.asm,$(BUILD_DIR)/%.lst,$(SRCS))
 MEMS := $(patsubst %.asm,$(BUILD_DIR)/%.mem,$(SRCS))
 
-ZASM_FLAGS := --asm8080
+ZASM_FLAGS := --asm8080 -u -w
 
 .PHONY: all clean
 
@@ -19,10 +19,6 @@ $(BUILD_DIR)/%.mem: $(BUILD_DIR)/%
 	mkdir -p $(dir $@)
 	xxd -p -c1 $< > $@
 
-
-$(BUILD_DIR)/%.lst: %.asm
-	mkdir -p $(dir $@)
-	zasm $(ZASM_FLAGS) -o $@ $<
 
 $(BUILD_DIR)/%: %.asm
 	mkdir -p $(dir $@)

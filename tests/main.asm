@@ -10,15 +10,13 @@ rst_16:
 init:
     lxi     sp, 0x2800
 
-    mvi     a, 8
-    call    fib
+    mvi     a, 0x42
+    sta     0x2000
+    mvi     a, 0x00
+    lda     0x2000
 
 loop:
     jmp     loop
-
-my_fn:
-    nop
-    rz
 
 fib:
     cpi     2
