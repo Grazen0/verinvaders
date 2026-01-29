@@ -118,7 +118,6 @@ module invaders (
       .clk  (clk),
       .rst_n(rst_n),
 
-      .hold (1'b0),
       .ready(1'b1),
       .iint (iint),
 

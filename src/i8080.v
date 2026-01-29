@@ -1452,9 +1452,6 @@ module i8080 #(
     inout  tri  [  XLEN-1:0] data,
     output wire [2*XLEN-1:0] addr,
 
-    input  wire hold,
-    output wire hlda,
-
     input  wire ready,
     output wire wwait,
 

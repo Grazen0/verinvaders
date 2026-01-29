@@ -2,12 +2,6 @@
 
 `include "i8080.vh"
 
-`define INPUT1_COIN 8'b0000_0001
-`define INPUT1_P1START 8'b0000_0100
-`define INPUT1_P1SHOOT 8'b0001_0000
-`define INPUT1_P1LEFT 8'b0010_0000
-`define INPUT1_P1RIGHT 8'b0100_0000
-
 module cpm (
     input wire clk,
     input wire rst_n
@@ -47,7 +41,6 @@ module cpm (
       .clk  (clk),
       .rst_n(rst_n),
 
-      .hold (1'b0),
       .ready(1'b1),
       .iint (1'b0),
 
