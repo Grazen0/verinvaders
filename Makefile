@@ -15,7 +15,7 @@ BIN_TARGET := invaders.mem
 INC_DIRS := $(shell find ./include -type d)
 INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
-override IVERILOG_FLAGS += -DIVERILOG -Wall
+override IVERILOG_FLAGS += -DIVERILOG -Wall -g2001
 
 .PHONY: all clean run wave
 
