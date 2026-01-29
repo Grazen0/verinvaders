@@ -1,19 +1,21 @@
 .org 0x0000
     jmp     init
 
+.org 0x0008
+    ret
+
 .org 0x0010
-rst_16:
-    nop
-    nop
     ret
 
 init:
     lxi     sp, 0x2800
 
-    mvi     a, 0x42
-    sta     0x2000
-    mvi     a, 0x00
-    lda     0x2000
+    mvi     a, 0b00110101
+    sta     0x2400
+    sta     0x2401
+    sta     0x2403
+    sta     0x2405
+    sta     0x2406
 
 loop:
     jmp     loop

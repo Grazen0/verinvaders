@@ -108,15 +108,16 @@ module control #(
     output wire dbin,
 
     output reg read_flags,
-    output reg write_flags,
-    output reg write_a,
     output reg read_a,
-    output reg write_act,
     output reg read_tmp,
-    output reg write_tmp,
-    output reg write_instr,
     output reg read_alu,
     output reg read_regs,
+
+    output reg write_flags,
+    output reg write_a,
+    output reg write_act,
+    output reg write_tmp,
+    output reg write_instr,
     output reg write_regs,
 
     output reg swap_hl_de,
@@ -1179,27 +1180,6 @@ module decimal_adjust #(
   assign out = {d1, d0};
 endmodule
 
-module adder #(
-    parameter XLEN = 8
-) (
-    input wire [XLEN-1:0] op_a,
-    input wire [XLEN-1:0] op_b,
-    input wire            carry_in,
-
-    output reg [XLEN-1:0] result
-);
-  reg [XLEN:0] carry;
-  integer i;
-
-  always @(*) begin
-    carry[0] = carry_in;
-
-    for (i = 0; i < XLEN; i = i + 1) begin
-      {carry[i+1], result} = op_a[i] + op_b[i] + carry[i];
-    end
-  end
-endmodule
-
 module alu #(
     parameter XLEN = 8
 ) (
@@ -1824,10 +1804,10 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_adr),
-      .oenable(1'b1),
+      .oenable(1'bx),
 
-      .in(regs_out_rp),
-      .out_tri(addr)
+      .in (regs_out_rp),
+      .out(addr)
   );
 
   data_bus_buffer #(

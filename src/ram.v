@@ -8,8 +8,8 @@ module ram #(
 ) (
     input wire clk,
 
-    input  wire [ADDR_WIDTH-1:0] addr_1,
-    output tri  [DATA_WIDTH-1:0] data_1,
+    input wire [ADDR_WIDTH-1:0] addr_1,
+    inout tri  [DATA_WIDTH-1:0] data_1,
 
     input wire enable_1,
     input wire oenable_1,
@@ -30,8 +30,6 @@ module ram #(
   assign data_2 = mem[addr_2];
 
   initial begin
-    if (SOURCE_FILE != "") begin
-      $readmemh(SOURCE_FILE, mem);
-    end
+    $readmemh(SOURCE_FILE, mem);
   end
 endmodule

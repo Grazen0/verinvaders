@@ -4,6 +4,9 @@ module top (
     input wire clk,
     input wire rst,
 
+    inout wire joypad_scl_pin,
+    inout wire joypad_sda_pin,
+
     output wire [3:0] vga_red,
     output wire [3:0] vga_green,
     output wire [3:0] vga_blue,
@@ -45,10 +48,18 @@ module top (
   );
 `endif
 
+  wire joypad_scl_out;
+  wire joypad_sda_in;
+  wire joypad_sda_out;
+
   invaders invaders (
       .clk    (sys_clk),
       .vga_clk(vga_clk),
       .rst_n  (~rst),
+
+      .joypad_scl_out(joypad_scl_out),
+      .joypad_sda_in (joypad_sda_in),
+      .joypad_sda_out(joypad_sda_out),
 
       .vga_red  (vga_red),
       .vga_green(vga_green),
@@ -56,4 +67,8 @@ module top (
       .h_sync   (h_sync),
       .v_sync   (v_sync)
   );
+
+  assign joypad_scl_pin = ~joypad_scl_out ? 1'b0 : 1'bz;
+  assign joypad_sda_pin = ~joypad_sda_out ? 1'b0 : 1'bz;
+  assign joypad_sda_in  = joypad_sda_pin;
 endmodule

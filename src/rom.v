@@ -6,8 +6,8 @@ module rom #(
     parameter SIZE = 0,
     parameter ADDR_WIDTH = $clog2(SIZE)
 ) (
-    input  wire [ADDR_WIDTH-1:0] addr,
-    output tri  [DATA_WIDTH-1:0] data,
+    input wire [ADDR_WIDTH-1:0] addr,
+    inout tri  [DATA_WIDTH-1:0] data,
 
     input wire enable,
     input wire oenable

@@ -35,6 +35,9 @@ module video_unit #(
   localparam V_BACK = V_SYNC + 2;
   localparam V_FRAME = V_BACK + 33;
 
+  localparam FRAME_HEIGHT = 256;
+  localparam FRAME_WIDTH = 224;
+
   reg [$clog2(V_FRAME)-1:0] y_pos, y_pos_next;
   reg [$clog2(H_LINE)-1:0] x_pos, x_pos_next;
   reg h_visible, h_visible_next;
@@ -101,7 +104,7 @@ module video_unit #(
 
   wire cur_color = ram_data[7-y_pos[2:0]];
 
-  wire visible = h_visible & v_visible;
+  wire visible = h_visible & v_visible & (x_pos < FRAME_WIDTH) & (y_pos < FRAME_HEIGHT);
   assign {vga_red, vga_green, vga_blue} = {12{cur_color & visible}};
 
   assign mid_screen = y_pos == HEIGHT / 2;

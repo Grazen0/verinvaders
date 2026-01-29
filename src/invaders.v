@@ -19,7 +19,7 @@ module shift_register #(
     input wire [2:0] shift_amount,
 
     input wire oenable,
-    output tri [XLEN-1:0] shift_result
+    inout tri [XLEN-1:0] shift_result
 );
   wire [2*XLEN-1:0] shift_value;
 
@@ -54,6 +54,10 @@ module invaders (
     input wire vga_clk,
     input wire rst_n,
 
+    output wire joypad_scl_out,
+    input  wire joypad_sda_in,
+    output wire joypad_sda_out,
+
     output wire [3:0] vga_red,
     output wire [3:0] vga_green,
     output wire [3:0] vga_blue,
@@ -63,7 +67,7 @@ module invaders (
   localparam XLEN = 8;
 
   wire [2*XLEN-1:0] addr;
-  wire [XLEN-1:0] io_addr = addr[7:0];
+  wire [XLEN-1:0] io_addr = addr[XLEN-1:0];
   tri [XLEN-1:0] data;
 
   wire sync;
@@ -87,15 +91,6 @@ module invaders (
 
       .enable (mem_enable & data_sel),
       .oenable(dbin)
-
-      // .clk(clk),
-      //
-      // .addr_1(addr[$clog2(ROM_SIZE)-1:0]),
-      // .data_1(data),
-      //
-      // .enable_1 (data_sel & ~in_out & ~inta),
-      // .oenable_1(dbin),
-      // .wenable_1(~write_n)
   );
 
   ram #(
@@ -185,8 +180,19 @@ module invaders (
       .shift_result(data)
   );
 
-  wire [XLEN-1:0] input_1 = 8'b0000_0001;
-  wire [XLEN-1:0] input_2 = 8'b0000_0000;
+  reg [XLEN-1:0] input_1;
+  reg [XLEN-1:0] input_2;
+
+  always @(*) begin
+    input_1 = 8'b0000_0000;
+    input_2 = 8'b0000_0000;
+
+    input_1[0] = ~joypad_data[5];  // credit -> select
+    input_1[2] = joypad_data[4];  // p1 start -> start
+    input_1[4] = joypad_data[7];  // p1 shoot -> a
+    input_1[5] = joypad_data[1];  // p1 left -> left
+    input_1[6] = joypad_data[0];  // p1 right -> right
+  end
 
   assign data = (read_io && io_addr == 8'h01) ? input_1 : {XLEN{1'bz}};
   assign data = (read_io && io_addr == 8'h02) ? input_2 : {XLEN{1'bz}};
@@ -219,5 +225,40 @@ module invaders (
 
       .mid_screen(mid_screen),
       .vblank    (vblank)
+  );
+
+  wire       nes_ready;
+  wire [7:0] joypad;
+  wire       joypad_valid;
+
+  nes_bridge #(
+      .SCL_PERIOD(20)  // 100 KHz assuming 2 MHz clk
+  ) nes_bridge (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .ready       (nes_ready),
+      .start       (nes_ready),
+      .joypad      (joypad),
+      .joypad_valid(joypad_valid),
+
+      .scl_out(joypad_scl_out),
+      .sda_in (joypad_sda_in),
+      .sda_out(joypad_sda_out)
+  );
+
+  wire [7:0] joypad_data;
+
+  register #(
+      .RESET_VALUE(8'h00)
+  ) joypad_reg (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .wenable(joypad_valid),
+      .oenable(1'b1),
+
+      .in (~joypad),
+      .out(joypad_data)
   );
 endmodule

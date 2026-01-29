@@ -27,11 +27,13 @@ module top_tb ();
   always @(posedge top.sys_clk) begin
     if (top.invaders.i8080.control.mcycle == 0 && top.invaders.i8080.control.tstate == 0) begin  // M1
       if (step != 0) begin
-        $display("pc = %h, a = %h, f = %b, hl = %h", pc, a, f, {h, l});
+        $display("pc = %h, mem = %h %h %h %h %h", pc, top.invaders.ram.mem['h400],
+                 top.invaders.ram.mem['h401], top.invaders.ram.mem['h402],
+                 top.invaders.ram.mem['h403], top.invaders.ram.mem['h404]);
       end
 
       step = step + 1;
-      // if (step > 100) $finish();
+      if (step > 100) $finish();
     end
   end
 

@@ -22,7 +22,6 @@
 `define RP_SEL_SP 3'b011
 `define RP_SEL_WZ 3'b100
 `define RP_SEL_PC 3'b101
-`define RP_SEL_ADR 3'b110
 
 `define RP_LO 1'b1
 `define RP_HI 1'b0

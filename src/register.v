@@ -16,7 +16,7 @@ module register #(
 );
   reg [WIDTH-1:0] data;
 
-  always @(posedge clk or negedge rst_n) begin
+  always @(posedge clk) begin
     if (!rst_n) data <= RESET_VALUE;
     else if (wenable) data <= in;
   end
