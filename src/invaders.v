@@ -1,6 +1,7 @@
 `default_nettype none `timescale 1ns / 1ps
 
 `include "i8080.vh"
+`include "compat.vh"
 
 `define INPUT1_COIN 8'b0000_0001
 `define INPUT1_P1START 8'b0000_0100
@@ -81,7 +82,7 @@ module invaders (
   wire mem_enable = ~in_out & ~inta;
 
   rom #(
-      .SOURCE_FILE("../build/invaders.mem"),
+      .SOURCE_FILE(`MK_PATH("build/invaders.mem")),
       .SIZE(ROM_SIZE),
       .DATA_WIDTH(XLEN)
   ) rom (
