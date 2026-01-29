@@ -33,10 +33,10 @@ module color_gen #(
 
   always @(*) begin
     if (x_pos_virt >= 192 && x_pos_virt < 224) begin
-      pos_color = 12'hF44;  // red
+      pos_color = 12'hF66;  // red
     end else if (x_pos_virt < 72
         && (x_pos_virt >= 15 || (y_pos_virt >= 16 && y_pos_virt <= 134))) begin
-      pos_color = 12'h4F4;  // green
+      pos_color = 12'h6F6;  // green
     end else begin
       pos_color = 12'hFFF;  // white
     end
