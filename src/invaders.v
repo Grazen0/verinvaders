@@ -81,8 +81,7 @@ module invaders (
   wire mem_enable = ~in_out & ~inta;
 
   rom #(
-      // .SOURCE_FILE("/home/jdgt/Code/verilog/verinvaders/tests/build/main.mem"),
-      .SOURCE_FILE("/home/jdgt/Code/verilog/verinvaders/build/invaders.mem"),
+      .SOURCE_FILE("../build/invaders.mem"),
       .SIZE(ROM_SIZE),
       .DATA_WIDTH(XLEN)
   ) rom (

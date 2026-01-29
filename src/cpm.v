@@ -19,7 +19,7 @@ module cpm (
   localparam RAM_SIZE = 8 * 1024;  // 8 KB
 
   ram #(
-      .SOURCE_FILE("/home/jdgt/Code/verilog/verinvaders/tests/build/microcosm_diag.mem"),
+      .SOURCE_FILE("../tests/build/microcosm_diag.mem"),
       .SIZE(RAM_SIZE),
       .DATA_WIDTH(XLEN)
   ) ram (
