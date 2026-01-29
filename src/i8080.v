@@ -1205,8 +1205,12 @@ module alu #(
   wire [  XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
   wire [  XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
 
+  wire [XLEN/2:0] op_a_d0 = {1'b0, op_a[XLEN/2-1:0]};
+  wire [XLEN/2:0] op_b_d0 = {1'b0, op_b[XLEN/2-1:0]};
+  wire [XLEN/2:0] op_b_d0_signed = control[1] ? -op_b_d0 : op_b_d0;
+
   // TODO: remove unnecessary extra sum just for the aux carry
-  wire [XLEN/2:0] aux_sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
+  wire [XLEN/2:0] aux_sum = op_a_d0 + op_b_d0_signed + carry_ext_signed[XLEN/2:0];
   wire [  XLEN:0] sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
 
   reg             set_pzs_flags;
