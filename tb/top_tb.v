@@ -4,11 +4,24 @@ module top_tb ();
   reg clk, rst;
   always #5 clk = ~clk;
 
+  wire [3:0] vga_red;
+  wire [3:0] vga_green;
+  wire [3:0] vga_blue;
+  wire h_sync;
+  wire v_sync;
+
   top top (
       .clk(clk),
       .rst(rst),
 
-      .dip(5'b00000)
+      .dip(5'b00000),
+
+      .joypad_scl_pin(),
+      .joypad_sda_pin(),
+
+      .vga_red  (vga_red),
+      .vga_green(vga_green),
+      .vga_blue (vga_blue)
   );
 
   wire [15:0] pc = top.invaders.i8080.adr_reg.data;
