@@ -69,14 +69,3 @@ module cpm (
   wire inta = status[`STATUS_INTA];
   wire in_out = status[`STATUS_INP] | status[`STATUS_OUT];
 endmodule
-
-
-
-
-
-
-
-
-
-
-
