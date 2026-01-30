@@ -1,4 +1,3 @@
-
 `default_nettype none `timescale 1ns / 1ps
 
 module top_tb ();
@@ -23,29 +22,22 @@ module top_tb ();
   wire [7:0] a = top.invaders.i8080.a_reg.data;
   wire [7:0] f = top.invaders.i8080.flags_reg.data;
 
-  integer step;
-  integer i;
+  integer step = 0;
 
   always @(posedge top.sys_clk) begin
     if (top.invaders.i8080.control.mcycle == 0 && top.invaders.i8080.control.tstate == 0) begin  // M1
-      if (step != 0) begin
-        $display("pc = %h, mem = %h %h %h %h %h", pc, top.invaders.ram.mem['h400],
-                 top.invaders.ram.mem['h401], top.invaders.ram.mem['h402],
-                 top.invaders.ram.mem['h403], top.invaders.ram.mem['h404]);
-      end
+      $display("pc = %h, sp = %h, regs = %h %h %h %h %h %h %h %h", pc, sp, b, c, d, e, h, l, a, f);
 
       step = step + 1;
-      if (step > 100) $finish();
+      if (step > 1000) $finish();
     end
   end
 
   initial begin
     $dumpvars(0, top_tb);
 
-    step = 0;
-
-    clk  = 1;
-    rst  = 1;
+    clk = 1;
+    rst = 1;
 
     #500 rst = 0;
   end
