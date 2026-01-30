@@ -60,7 +60,6 @@ module cpm (
       .rst_n(rst_n),
 
       .wenable(sync),
-      .oenable(1'b1),
 
       .in (data),
       .out(status)

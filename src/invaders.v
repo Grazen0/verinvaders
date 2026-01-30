@@ -27,11 +27,10 @@ module shift_register #(
     input wire clk,
     input wire rst_n,
 
-    input wire [XLEN-1:0] wdata,
-    input wire wenable,
-    input wire [2:0] shift_amount,
-    input wire oenable,
-    inout tri [XLEN-1:0] shift_result
+    input  wire [XLEN-1:0] wdata,
+    input  wire            wenable,
+    input  wire [     2:0] shift_amount,
+    output wire [XLEN-1:0] shift_result
 );
   wire [2*XLEN-1:0] shift_value;
 
@@ -40,10 +39,8 @@ module shift_register #(
       .rst_n(rst_n),
 
       .wenable(wenable),
-      .oenable(1'b1),
-
-      .in (wdata),
-      .out(shift_value[15:8])
+      .in     (wdata),
+      .out    (shift_value[15:8])
   );
 
   register shift_lo_reg (
@@ -51,14 +48,12 @@ module shift_register #(
       .rst_n(rst_n),
 
       .wenable(wenable),
-      .oenable(1'b1),
-
-      .in (shift_value[15:8]),
-      .out(shift_value[XLEN-1:0])
+      .in     (shift_value[15:8]),
+      .out    (shift_value[XLEN-1:0])
   );
 
   wire [2*XLEN-1:0] shift_result_full = shift_value << shift_amount;
-  assign shift_result = oenable ? shift_result_full[15:8] : {XLEN{1'bz}};
+  assign shift_result = shift_result_full[15:8];
 endmodule
 
 module invaders (
@@ -79,6 +74,7 @@ module invaders (
     output wire v_sync
 );
   localparam XLEN = 8;
+  localparam ZZ = {XLEN{1'bz}};
 
   wire [2*XLEN-1:0] addr;
   wire [XLEN-1:0] io_addr = addr[XLEN-1:0];
@@ -149,7 +145,6 @@ module invaders (
       .rst_n(rst_n),
 
       .wenable(sync),
-      .oenable(1'b1),
 
       .in (data),
       .out(status)
@@ -172,11 +167,12 @@ module invaders (
       .rst_n(rst_n),
 
       .wenable(write_io & (io_addr <= 8'h02)),
-      .oenable(1'b1),
 
       .in (data[SHIFT_AMOUNT_WIDTH-1:0]),
       .out(shift_amount)
   );
+
+  wire [XLEN-1:0] shift_result;
 
   shift_register #(
       .XLEN(XLEN)
@@ -187,10 +183,9 @@ module invaders (
       .wdata       (data),
       .wenable     (write_io & (io_addr == 8'h04)),
       .shift_amount(shift_amount),
-
-      .oenable     (read_io & (io_addr == 8'h03)),
-      .shift_result(data)
+      .shift_result(shift_result)
   );
+
 
   reg [XLEN-1:0] input_0;
   reg [XLEN-1:0] input_1;
@@ -217,9 +212,10 @@ module invaders (
     input_2[`INP2_COIN_INFO]  = dip[0];  // show coin info
   end
 
-  assign data = (read_io && io_addr == 8'h00) ? input_0 : {XLEN{1'bz}};
-  assign data = (read_io && io_addr == 8'h01) ? input_1 : {XLEN{1'bz}};
-  assign data = (read_io && io_addr == 8'h02) ? input_2 : {XLEN{1'bz}};
+  assign data = (read_io && io_addr == 8'h00) ? input_0 : ZZ;
+  assign data = (read_io && io_addr == 8'h01) ? input_1 : ZZ;
+  assign data = (read_io && io_addr == 8'h02) ? input_2 : ZZ;
+  assign data = (read_io && io_addr == 8'h03) ? shift_result : ZZ;
 
   wire [$clog2(RAM_SIZE)-1:0] video_ram_addr;
   wire [XLEN-1:0] video_ram_data;
@@ -229,7 +225,7 @@ module invaders (
 
   wire [XLEN-1:0] rst_instr = {2'b11, mid_screen ? 3'b001 : 3'b010, 3'b111};
 
-  assign data = (dbin & inta) ? rst_instr : {XLEN{1'bz}};
+  assign data = (dbin & inta) ? rst_instr : ZZ;
 
   video_unit #(
       .RAM_SIZE(RAM_SIZE),
@@ -280,7 +276,6 @@ module invaders (
       .rst_n(rst_n),
 
       .wenable(joypad_valid),
-      .oenable(1'b1),
 
       .in (~joypad),
       .out(joypad_data)

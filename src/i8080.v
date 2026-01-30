@@ -10,7 +10,7 @@ module data_bus_buffer #(
 
     inout wire [XLEN-1:0] bus,
     input wire            sync,
-    inout wire [XLEN-1:0] status,
+    input wire [XLEN-1:0] status,
     input wire            out_wenable,
     input wire            out_enable,
     input wire            in_enable,
@@ -18,21 +18,25 @@ module data_bus_buffer #(
     inout tri [XLEN-1:0] out
 
 );
+  localparam ZZ = {XLEN{1'bz}};
+
+  wire [XLEN-1:0] out_data;
+
   register #(
       .WIDTH(XLEN)
-  ) out_reg (
+  ) out_data_reg (
       .clk  (clk),
       .rst_n(rst_n),
 
       .wenable(out_wenable),
-      .oenable(out_enable),
-
       .in     (bus),
-      .out_tri(out)
+      .out    (out_data)
   );
 
-  assign out = sync ? status : {XLEN{1'bz}};
-  assign bus = in_enable ? out : {XLEN{1'bz}};
+  assign out = out_enable ? out_data : ZZ;
+  assign out = sync ? status : ZZ;
+
+  assign bus = in_enable ? out : ZZ;
 endmodule
 
 
@@ -95,6 +99,7 @@ module control #(
     input  wire ready,
     output wire wwait,
     output wire sync,
+    output reg  inte,
 
     output reg data_in_enable,
     output reg data_out_enable,
@@ -167,7 +172,7 @@ module control #(
   wire [2:0] rp_ext = {1'b0, rp};
 
   reg wz_as_pc;
-  reg inte, inte_next;
+  reg inte_next;
   reg iint_prev, iint_prev_next;
   reg int_ff, int_ff_next;
   reg hlt;
@@ -985,6 +990,7 @@ module control #(
   assign dbin  = data_in_enable;
   assign write = data_out_enable;
   assign sync  = tstate == T1;
+  assign wwait = tstate == TW | tstate == TWH;
 endmodule
 
 module instr_decoder #(
@@ -1186,16 +1192,11 @@ module alu #(
     input wire [XLEN-1:0] op_a,
     input wire [XLEN-1:0] op_b,
     input wire [4:0] control,
-    input wire oenable,
+    input wire [XLEN-1:0] flags_in,
 
-    output wire [XLEN-1:0] out,
-    output tri  [XLEN-1:0] out_tri,
-
-    input  wire [XLEN-1:0] flags_in,
-    output reg  [XLEN-1:0] flags_out
+    output reg [XLEN-1:0] out,
+    output reg [XLEN-1:0] flags_out
 );
-  reg  [XLEN-1:0] result;
-
   wire            carry_in = ~control[2] & control[0] & flags_in[`FC];
 
   wire [  XLEN:0] op_a_ext = {1'b0, op_a};
@@ -1221,10 +1222,10 @@ module alu #(
   decimal_adjust #(
       .XLEN(XLEN)
   ) decimal_adjust (
-      .in(op_a),
+      .in      (op_a),
       .flags_in(flags_in),
 
-      .out(daa_out),
+      .out      (daa_out),
       .flags_out(daa_flags_out)
   );
 
@@ -1234,75 +1235,72 @@ module alu #(
 
     casez (control)
       5'b00_0zz, 5'b00_111: begin  // add/adc/sbb/sbc
-        {flags_out[`FC], result} = sum;
-        flags_out[`FA]           = aux_sum[XLEN/2];
-        set_pzs_flags            = 1;
+        {flags_out[`FC], out} = sum;
+        flags_out[`FA]        = aux_sum[XLEN/2];
+        set_pzs_flags         = 1;
       end
       5'b00_100: begin  // ana
-        result         = op_a & op_b;
+        out            = op_a & op_b;
         flags_out[`FC] = 0;
         flags_out[`FA] = 0;
         set_pzs_flags  = 1;
       end
       5'b00_101: begin  // xra
-        result         = op_a ^ op_b;
+        out            = op_a ^ op_b;
         flags_out[`FC] = 0;
         flags_out[`FA] = 0;
         set_pzs_flags  = 1;
       end
       5'b00_110: begin  // ora
-        result         = op_a | op_b;
+        out            = op_a | op_b;
         flags_out[`FC] = 0;
         flags_out[`FA] = 0;
         set_pzs_flags  = 1;
       end
       5'b01_000: begin  // rlc
-        result         = {op_a[XLEN-2:0], op_a[XLEN-1]};
+        out            = {op_a[XLEN-2:0], op_a[XLEN-1]};
         flags_out[`FC] = op_a[XLEN-1];
       end
       5'b01_001: begin  // rrc
-        result         = {op_a[0], op_a[XLEN-1:1]};
+        out            = {op_a[0], op_a[XLEN-1:1]};
         flags_out[`FC] = op_a[0];
       end
-      5'b01_010: {flags_out[`FC], result} = {op_a, flags_out[`FC]};  // ral
-      5'b01_011: {result, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
+      5'b01_010: {flags_out[`FC], out} = {op_a, flags_out[`FC]};  // ral
+      5'b01_011: {out, flags_out[`FC]} = {flags_out[`FC], op_a};  // rar
       5'b01_100: begin  // daa
-        result    = daa_out;
+        out    = daa_out;
         flags_out = daa_flags_out;
       end
-      5'b01_101: result = ~op_a;  // cma
+      5'b01_101: out = ~op_a;  // cma
       5'b01_110: begin  // stc
-        result         = op_a;
+        out            = op_a;
         flags_out[`FC] = 1;
       end
       5'b01_111: begin  // cmc
-        result         = op_a;
+        out            = op_a;
         flags_out[`FC] = ~flags_out[`FC];
       end
 
       5'b10_zz0: begin  // inr
-        result        = op_b + 1;
+        out           = op_b + 1;
         set_pzs_flags = 1;
       end
       5'b10_zz1: begin  // dcr
-        result        = op_b - 1;
+        out           = op_b - 1;
         set_pzs_flags = 1;
       end
 
-      5'b11_zzz: {flags_out[`FC], result} = sum;  // add but only set carry, used for dad
+      5'b11_zzz: {flags_out[`FC], out} = sum;  // add but only set carry, used for dad
 
-      default: result = {XLEN{1'bx}};
+      default: out = {XLEN{1'bx}};
     endcase
 
     if (set_pzs_flags) begin
-      flags_out[`FP] = ~(^result);
-      flags_out[`FZ] = result == 0;
-      flags_out[`FS] = result[XLEN-1];
+      flags_out[`FP] = ~(^out);
+      flags_out[`FZ] = out == 0;
+      flags_out[`FS] = out[XLEN-1];
     end
   end
-
-  assign out = result;
-  assign out_tri = oenable ? out : {XLEN{1'bz}};
 endmodule
 
 module register_array #(
@@ -1314,10 +1312,9 @@ module register_array #(
     input wire [     3:0] reg_sel,
     input wire [XLEN-1:0] wdata,
     input wire            wenable,
-    input wire            oenable,
 
-    output reg [2*XLEN-1:0] rpdata,
-    output tri [  XLEN-1:0] rdata,
+    output reg  [2*XLEN-1:0] rpdata,
+    output wire [  XLEN-1:0] rdata,
 
     // why
     input wire swap_hl_de,
@@ -1438,9 +1435,7 @@ module register_array #(
     end
   end
 
-  wire [XLEN-1:0] out = nib_sel == `RP_LO ? rpdata[7:0] : rpdata[15:8];
-
-  assign rdata = oenable ? out : {XLEN{1'bz}};
+  assign rdata = nib_sel == `RP_LO ? rpdata[7:0] : rpdata[15:8];
 endmodule
 
 module i8080 #(
@@ -1463,22 +1458,18 @@ module i8080 #(
     output wire dbin,
     output wire write_n
 );
-  tri [XLEN-1:0] bus;
+  localparam ZZ = {XLEN{1'bz}};
 
-  tri [XLEN-1:0] flags_tri;
-  tri [XLEN-1:0] a_tri;
-  tri [XLEN-1:0] act;
-  tri [XLEN-1:0] tmp_tri;
-  tri [XLEN-1:0] instr;
-  tri [XLEN-1:0] alu_flags_out;
-  tri [XLEN-1:0] alu_out_tri;
-  tri [XLEN-1:0] regs_out;
+  tri  [XLEN-1:0] bus;
 
-  assign bus = a_tri;
-  assign bus = tmp_tri;
-  assign bus = flags_tri;
-  assign bus = alu_out_tri;
-  assign bus = regs_out;
+  wire [XLEN-1:0] flags;
+  wire [XLEN-1:0] a;
+  wire [XLEN-1:0] act;
+  wire [XLEN-1:0] tmp;
+  wire [XLEN-1:0] instr;
+  wire [XLEN-1:0] alu_flags_out;
+  wire [XLEN-1:0] alu_out;
+  wire [XLEN-1:0] regs_out;
 
   wire read_flags, write_flags;
   wire read_a, write_a;
@@ -1488,7 +1479,11 @@ module i8080 #(
   wire read_alu;
   wire read_regs, write_regs;
 
-  wire [XLEN-1:0] flags;
+  assign bus = read_a ? a : ZZ;
+  assign bus = read_tmp ? tmp : ZZ;
+  assign bus = read_flags ? flags : ZZ;
+  assign bus = read_alu ? alu_out : ZZ;
+  assign bus = read_regs ? regs_out : ZZ;
 
   register #(
       .WIDTH(XLEN),
@@ -1498,14 +1493,10 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_flags),
-      .oenable(read_flags),
 
-      .in     (flags_src == `FLAGS_SRC_ALU ? alu_flags_out : bus),
-      .out_tri(flags_tri),
-      .out    (flags)
+      .in (flags_src == `FLAGS_SRC_ALU ? alu_flags_out : bus),
+      .out(flags)
   );
-
-  wire [XLEN-1:0] a;
 
   register #(
       .WIDTH(XLEN)
@@ -1514,10 +1505,8 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_a),
-      .oenable(read_a),
 
-      .in(a_src == `A_SRC_BUS ? bus : alu_out),
-      .out_tri(a_tri),
+      .in (a_src == `A_SRC_BUS ? bus : alu_out),
       .out(a)
   );
 
@@ -1528,13 +1517,9 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_act),
-      .oenable(1'b1),
-
-      .in (act_src == `ACT_SRC_A ? a : bus),
-      .out(act)
+      .in     (act_src == `ACT_SRC_A ? a : bus),
+      .out    (act)
   );
-
-  wire [XLEN-1:0] tmp;
 
   register #(
       .WIDTH(XLEN)
@@ -1543,11 +1528,8 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_tmp),
-      .oenable(read_tmp),
-
-      .in(bus),
-      .out_tri(tmp_tri),
-      .out(tmp)
+      .in     (bus),
+      .out    (tmp)
   );
 
   register #(
@@ -1557,13 +1539,9 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_instr),
-      .oenable(1'b1),
-
       .in     (bus),
-      .out_tri(instr)
+      .out    (instr)
   );
-
-  wire [XLEN-1:0] alu_out;
 
   alu #(
       .XLEN(XLEN)
@@ -1575,9 +1553,7 @@ module i8080 #(
       .flags_in (flags),
       .flags_out(alu_flags_out),
 
-      .oenable(read_alu),
-      .out    (alu_out),
-      .out_tri(alu_out_tri)
+      .out(alu_out)
   );
 
   wire [2*XLEN-1:0] regs_out_rp;
@@ -1591,7 +1567,6 @@ module i8080 #(
       .reg_sel(reg_sel),
       .wdata  (bus),
       .wenable(write_regs),
-      .oenable(read_regs),
       .rdata  (regs_out),
       .rpdata (regs_out_rp),
 
@@ -1756,6 +1731,7 @@ module i8080 #(
       .iint (int_sync),
       .ready(ready),
       .wwait(wwait),
+      .inte (inte),
 
       .sync  (sync),
       .status(status),
@@ -1805,7 +1781,6 @@ module i8080 #(
       .rst_n(rst_n),
 
       .wenable(write_adr),
-      .oenable(1'bx),
 
       .in (regs_out_rp),
       .out(addr)

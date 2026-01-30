@@ -8,10 +8,8 @@ module register #(
     input wire rst_n,
 
     input wire wenable,
-    input wire oenable,
 
     input  wire [WIDTH-1:0] in,
-    output tri  [WIDTH-1:0] out_tri,
     output wire [WIDTH-1:0] out
 );
   reg [WIDTH-1:0] data;
@@ -21,7 +19,6 @@ module register #(
     else if (wenable) data <= in;
   end
 
-  assign out_tri = oenable ? data : {WIDTH{1'bz}};
   assign out = data;
 endmodule
 
