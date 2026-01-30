@@ -3,7 +3,7 @@
 
 `define FC 0
 `define FP 2
-`define FA 4 // TODO: implement this flag
+`define FA 4
 `define FZ 6
 `define FS 7
 

@@ -21,41 +21,6 @@
 `define INP2_P2RIGHT 6
 `define INP2_COIN_INFO 7
 
-module shift_register #(
-    parameter XLEN = 8
-) (
-    input wire clk,
-    input wire rst_n,
-
-    input  wire [XLEN-1:0] wdata,
-    input  wire            wenable,
-    input  wire [     2:0] shift_amount,
-    output wire [XLEN-1:0] shift_result
-);
-  wire [2*XLEN-1:0] shift_value;
-
-  register shift_hi_reg (
-      .clk  (clk),
-      .rst_n(rst_n),
-
-      .wenable(wenable),
-      .in     (wdata),
-      .out    (shift_value[15:8])
-  );
-
-  register shift_lo_reg (
-      .clk  (clk),
-      .rst_n(rst_n),
-
-      .wenable(wenable),
-      .in     (shift_value[15:8]),
-      .out    (shift_value[XLEN-1:0])
-  );
-
-  wire [2*XLEN-1:0] shift_result_full = shift_value << shift_amount;
-  assign shift_result = shift_result_full[15:8];
-endmodule
-
 module invaders (
     input wire clk,
     input wire vga_clk,
@@ -91,7 +56,7 @@ module invaders (
   wire mem_enable = ~in_out & ~inta;
 
   rom #(
-      .SOURCE_FILE(`MK_PATH("build/invaders.mem")),
+      .SOURCE_FILE(`MK_PATH("../", "build/invaders.mem")),
       .SIZE(ROM_SIZE),
       .DATA_WIDTH(XLEN)
   ) rom (
@@ -129,6 +94,9 @@ module invaders (
 
       .ready(1'b1),
       .iint (iint),
+
+      .wwait(),
+      .inte (),
 
       .sync   (sync),
       .dbin   (dbin),

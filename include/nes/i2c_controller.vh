@@ -1,0 +1,9 @@
+`ifndef INVADERS_NES_I2C_CONTROLLER_VH
+`define INVADERS_NES_I2C_CONTROLLER_VH
+
+`define CMD_START 2'd0
+`define CMD_WRITE 2'd1
+`define CMD_READ 2'd2
+`define CMD_STOP 2'd3
+
+`endif

@@ -20,7 +20,7 @@ module cpm (
   localparam RAM_SIZE = 8 * 1024;  // 8 KB
 
   ram #(
-      .SOURCE_FILE(`MK_PATH("tests/build/microcosm_diag.mem")),
+      .SOURCE_FILE(`MK_PATH("../", "tests/build/microcosm_diag.mem")),
       .SIZE(RAM_SIZE),
       .DATA_WIDTH(XLEN)
   ) ram (

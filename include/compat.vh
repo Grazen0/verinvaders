@@ -5,9 +5,9 @@
 // paths relative to the current working directory. This macro aims to provide
 // a way to make paths that work on both Vivado and iverilog.
 `ifdef IVERILOG
-`define MK_PATH(path) path
+`define MK_PATH(prefix, path) path
 `else
-`define MK_PATH(path) {"../", path}
+`define MK_PATH(prefix, path) {prefix, path}
 `endif
 
 `endif
