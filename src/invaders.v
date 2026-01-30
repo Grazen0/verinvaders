@@ -2,12 +2,24 @@
 
 `include "i8080.vh"
 `include "compat.vh"
+`include "nes_bridge.vh"
 
-`define INPUT1_COIN 8'b0000_0001
-`define INPUT1_P1START 8'b0000_0100
-`define INPUT1_P1SHOOT 8'b0001_0000
-`define INPUT1_P1LEFT 8'b0010_0000
-`define INPUT1_P1RIGHT 8'b0100_0000
+`define INP0_SELF_TEST 0
+
+`define INP1_COIN 0
+`define INP1_P2START 1
+`define INP1_P1START 2
+`define INP1_P1SHOOT 4
+`define INP1_P1LEFT 5
+`define INP1_P1RIGHT 6
+
+`define INP2_SHIPS 1:0
+`define INP2_TILT 2
+`define INP2_EXTRA_SHIP 3
+`define INP2_P2SHOOT 4
+`define INP2_P2LEFT 5
+`define INP2_P2RIGHT 6
+`define INP2_COIN_INFO 7
 
 module shift_register #(
     parameter XLEN = 8
@@ -18,7 +30,6 @@ module shift_register #(
     input wire [XLEN-1:0] wdata,
     input wire wenable,
     input wire [2:0] shift_amount,
-
     input wire oenable,
     inout tri [XLEN-1:0] shift_result
 );
@@ -54,6 +65,8 @@ module invaders (
     input wire clk,
     input wire vga_clk,
     input wire rst_n,
+
+    input wire [4:0] dip,
 
     output wire joypad_scl_out,
     input  wire joypad_sda_in,
@@ -179,20 +192,32 @@ module invaders (
       .shift_result(data)
   );
 
+  reg [XLEN-1:0] input_0;
   reg [XLEN-1:0] input_1;
   reg [XLEN-1:0] input_2;
 
   always @(*) begin
-    input_1 = 8'b0000_0000;
-    input_2 = 8'b0000_0000;
+    // See https://computerarcheology.com/Arcade/SpaceInvaders/Hardware.html
+    // for info on the input bits.
+    input_0                   = 8'b0000_1110;
+    input_1                   = 8'b0000_1000;
+    input_2                   = 8'b0000_0000;
 
-    input_1[0] = ~joypad_data[5];  // credit -> select
-    input_1[2] = joypad_data[4];  // p1 start -> start
-    input_1[4] = joypad_data[7];  // p1 shoot -> a
-    input_1[5] = joypad_data[1];  // p1 left -> left
-    input_1[6] = joypad_data[0];  // p1 right -> right
+    input_0[`INP0_SELF_TEST]  = dip[4];  // self-test request (?)
+
+    // it's nicer when the coin is detected on button press instead of release
+    input_1[`INP1_COIN]       = ~joypad_data[`JOYP_SELECT];
+    input_1[`INP1_P1START]    = joypad_data[`JOYP_START];
+    input_1[`INP1_P1SHOOT]    = joypad_data[`JOYP_A];
+    input_1[`INP1_P1LEFT]     = joypad_data[`JOYP_LEFT];
+    input_1[`INP1_P1RIGHT]    = joypad_data[`JOYP_RIGHT];
+
+    input_2[`INP2_SHIPS]      = dip[3:2];  // ships
+    input_2[`INP2_EXTRA_SHIP] = dip[1];  // extra ship at 1500 or 1000 pts
+    input_2[`INP2_COIN_INFO]  = dip[0];  // show coin info
   end
 
+  assign data = (read_io && io_addr == 8'h00) ? input_0 : {XLEN{1'bz}};
   assign data = (read_io && io_addr == 8'h01) ? input_1 : {XLEN{1'bz}};
   assign data = (read_io && io_addr == 8'h02) ? input_2 : {XLEN{1'bz}};
 

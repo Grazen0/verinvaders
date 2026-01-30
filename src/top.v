@@ -4,6 +4,8 @@ module top (
     input wire clk,
     input wire rst,
 
+    input wire [4:0] dip,
+
     inout wire joypad_scl_pin,
     inout wire joypad_sda_pin,
 
@@ -56,6 +58,8 @@ module top (
       .clk    (sys_clk),
       .vga_clk(vga_clk),
       .rst_n  (~rst),
+
+      .dip(dip),
 
       .joypad_scl_out(joypad_scl_out),
       .joypad_sda_in (joypad_sda_in),

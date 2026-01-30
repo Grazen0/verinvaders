@@ -7,7 +7,9 @@ module top_tb ();
 
   top top (
       .clk(clk),
-      .rst(rst)
+      .rst(rst),
+
+      .dip(5'b00000)
   );
 
   wire [15:0] pc = top.invaders.i8080.adr_reg.data;

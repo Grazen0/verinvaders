@@ -1,5 +1,7 @@
 `default_nettype none `timescale 1ns / 1ps
 
+`include "nes_bridge.vh"
+
 `define CMD_START 2'd0
 `define CMD_WRITE 2'd1
 `define CMD_READ 2'd2
@@ -427,21 +429,21 @@ module nes_bridge #(
 
           if (read_ctr_next == 1) begin
             // Just read penultimate byte
-            joypad_next[0] = i2c_rdata[7];
-            joypad_next[2] = i2c_rdata[6];
-            joypad_next[5] = i2c_rdata[4];
-            joypad_next[4] = i2c_rdata[2];
+            joypad_next[`JOYP_RIGHT]  = i2c_rdata[7];
+            joypad_next[`JOYP_DOWN]   = i2c_rdata[6];
+            joypad_next[`JOYP_SELECT] = i2c_rdata[4];
+            joypad_next[`JOYP_START]  = i2c_rdata[2];
           end else if (read_ctr_next == 0) begin
             // Just read last byte
-            joypad_next[6]    = i2c_rdata[6];
-            joypad_next[7]    = i2c_rdata[4];
-            joypad_next[1]    = i2c_rdata[1];
-            joypad_next[3]    = i2c_rdata[0];
-            joypad_valid_next = 1;
+            joypad_next[`JOYP_B]    = i2c_rdata[6];
+            joypad_next[`JOYP_A]    = i2c_rdata[4];
+            joypad_next[`JOYP_LEFT] = i2c_rdata[1];
+            joypad_next[`JOYP_UP]   = i2c_rdata[0];
+            joypad_valid_next       = 1;
 
-            i2c_start         = 1;
-            i2c_cmd           = `CMD_STOP;
-            state_next        = S_STOP_2;
+            i2c_start               = 1;
+            i2c_cmd                 = `CMD_STOP;
+            state_next              = S_STOP_2;
           end
         end
       end
