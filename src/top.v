@@ -8,8 +8,8 @@ module top (
 
     input wire [4:0] dip,
 
-    inout wire joypad_scl_pin,
-    inout wire joypad_sda_pin,
+    output tri joypad_scl_pin,
+    inout  tri joypad_sda_pin,
 
     output wire [3:0] vga_red,
     output wire [3:0] vga_green,
