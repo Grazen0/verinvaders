@@ -18,6 +18,8 @@ module ram #(
     input  wire [ADDR_WIDTH-1:0] addr_2,
     output wire [DATA_WIDTH-1:0] data_2
 );
+  localparam ZZ = {DATA_WIDTH{1'bz}};
+
   reg [DATA_WIDTH-1:0] mem[0:SIZE-1];
 
   always @(posedge clk) begin
@@ -26,10 +28,12 @@ module ram #(
     end
   end
 
-  assign data_1 = (enable_1 && oenable_1) ? mem[addr_1] : {DATA_WIDTH{1'bz}};
+  assign data_1 = (enable_1 && oenable_1) ? mem[addr_1] : ZZ;
   assign data_2 = mem[addr_2];
 
   initial begin
-    $readmemh(SOURCE_FILE, mem);
+    if (SOURCE_FILE != "") begin
+      $readmemh(SOURCE_FILE, mem);
+    end
   end
 endmodule
