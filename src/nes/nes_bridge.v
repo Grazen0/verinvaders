@@ -8,7 +8,7 @@ module nes_bridge #(
     parameter SCL_PERIOD = 500  // 10 Khz assuming base clock of 50 MHz
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire start,
 
@@ -50,7 +50,7 @@ module nes_bridge #(
       .SCL_PERIOD(SCL_PERIOD)
   ) i2c (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .cmd  (i2c_cmd),
       .start(i2c_start),
@@ -173,7 +173,7 @@ module nes_bridge #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       read_ctr     <= 0;
       joypad       <= 8'h00;
       joypad_valid <= 0;

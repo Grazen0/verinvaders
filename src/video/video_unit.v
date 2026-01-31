@@ -6,7 +6,7 @@ module video_unit #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     output wire [RAM_ADDR_WIDTH-1:0] ram_addr,
     input wire [XLEN-1:0] ram_data,
@@ -75,7 +75,7 @@ module video_unit #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       x_pos  <= 0;
       y_pos  <= 0;
       h_sync <= 1;

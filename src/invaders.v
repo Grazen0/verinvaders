@@ -28,7 +28,7 @@ module invaders (
     input wire clk,
     input wire vga_clk,
     input wire audio_clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [4:0] dip,
 
@@ -97,7 +97,7 @@ module invaders (
       .XLEN(XLEN)
   ) i8080 (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .ready(1'b1),
       .iint (iint),
@@ -117,7 +117,7 @@ module invaders (
 
   register status_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(sync),
 
@@ -139,7 +139,7 @@ module invaders (
       .WIDTH(SHIFT_AMOUNT_WIDTH)
   ) shift_amount_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_io & io_addr <= 8'h02),
 
@@ -153,7 +153,7 @@ module invaders (
       .XLEN(XLEN)
   ) shift_register (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wdata       (data),
       .wenable     (write_io & io_addr == 8'h04),
@@ -207,7 +207,7 @@ module invaders (
       .XLEN(XLEN)
   ) video_unit (
       .clk  (vga_clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .ram_addr(video_ram_addr),
       .ram_data(video_ram_data),
@@ -230,7 +230,7 @@ module invaders (
       .SCL_PERIOD(20)  // 100 KHz assuming 2 MHz clk
   ) nes_bridge (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .ready       (nes_ready),
       .start       (nes_ready),
@@ -248,7 +248,7 @@ module invaders (
       .RESET_VALUE(8'h00)
   ) joypad_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(joypad_valid),
       .in     (~joypad),
@@ -262,7 +262,7 @@ module invaders (
       .RESET_VALUE(4'h0)
   ) snd_5_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_io & io_addr == 8'h05),
       .in     (data[3:0]),
@@ -289,7 +289,7 @@ module invaders (
       .WIDTH(4)
   ) snd_3_edge_detector (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .enable(write_io & io_addr == 8'h03),
       .in    (data[3:0]),
@@ -301,7 +301,7 @@ module invaders (
       .NEGEDGE(1)
   ) ufo_negedge_detector (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .enable(write_io & io_addr == 8'h03),
       .in    (data[0]),
@@ -312,7 +312,7 @@ module invaders (
       .WIDTH(1)
   ) ufo_hit_edge_detector (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .enable(write_io & io_addr == 8'h05),
       .in    (data[4]),
@@ -323,7 +323,7 @@ module invaders (
       .CLK_FREQ(AUDIO_CLK_FREQ)
   ) audio_unit (
       .clk  (audio_clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .fleet_period   (fleet_snd_period),
       .play_ufo       (snd_3_posedge[0]),

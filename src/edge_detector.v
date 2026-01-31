@@ -5,7 +5,7 @@ module edge_detector #(
     parameter NEGEDGE = 0
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire enable,
     input wire [WIDTH-1:0] in,
@@ -14,7 +14,7 @@ module edge_detector #(
   reg [WIDTH-1:0] in_prev;
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       out     <= {WIDTH{1'b0}};
       in_prev <= {WIDTH{NEGEDGE ? 1'b1 : 1'b0}};
     end else if (enable) begin

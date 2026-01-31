@@ -44,7 +44,7 @@ module top (
       .clk      (sys_clk),
       .vga_clk  (vga_clk),
       .audio_clk(clk),
-      .rst_n    (~rst),
+      .rst      (rst),
 
       .dip(dip),
 

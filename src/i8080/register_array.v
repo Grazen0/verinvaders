@@ -6,7 +6,7 @@ module register_array #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [     3:0] reg_sel,
     input wire [XLEN-1:0] wdata,
@@ -118,7 +118,7 @@ module register_array #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       pc <= 0;
     end else begin
       pc <= pc_next;

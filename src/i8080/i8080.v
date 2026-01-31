@@ -6,7 +6,7 @@ module i8080 #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     inout  tri  [  XLEN-1:0] data,
     output wire [2*XLEN-1:0] addr,
@@ -54,7 +54,7 @@ module i8080 #(
       .RESET_VALUE(8'b0000_0010)
   ) flags_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_flags),
 
@@ -66,7 +66,7 @@ module i8080 #(
       .WIDTH(XLEN)
   ) a_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_a),
 
@@ -78,7 +78,7 @@ module i8080 #(
       .WIDTH(XLEN)
   ) act_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_act),
       .in     (act_src == `ACT_SRC_A ? a : bus),
@@ -89,7 +89,7 @@ module i8080 #(
       .WIDTH(XLEN)
   ) tmp_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_tmp),
       .in     (bus),
@@ -100,7 +100,7 @@ module i8080 #(
       .WIDTH(XLEN)
   ) instr_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_instr),
       .in     (bus),
@@ -126,7 +126,7 @@ module i8080 #(
       .XLEN(XLEN)
   ) reg_array (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .reg_sel(reg_sel),
       .wdata  (bus),
@@ -216,7 +216,7 @@ module i8080 #(
 
   synchronizer int_synchronizer (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .in (iint),
       .out(int_sync)
@@ -241,7 +241,7 @@ module i8080 #(
       .XLEN(XLEN)
   ) control (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .sss   (sss),
       .ddd   (ddd),
@@ -342,7 +342,7 @@ module i8080 #(
       .WIDTH(2 * XLEN)
   ) adr_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(write_adr),
 
@@ -354,7 +354,7 @@ module i8080 #(
       .XLEN(XLEN)
   ) data_bus_buffer (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .bus        (bus),
       .status     (status),

@@ -4,7 +4,7 @@ module shift_register #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input  wire [XLEN-1:0] wdata,
     input  wire            wenable,
@@ -15,7 +15,7 @@ module shift_register #(
 
   register shift_hi_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(wenable),
       .in     (wdata),
@@ -24,7 +24,7 @@ module shift_register #(
 
   register shift_lo_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(wenable),
       .in     (shift_value[15:8]),

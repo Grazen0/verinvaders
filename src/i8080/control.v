@@ -6,7 +6,7 @@ module control #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [2:0] sss,
     input wire [2:0] ddd,
@@ -931,7 +931,7 @@ module control #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       inte      <= 0;
       int_ff    <= 0;
       iint_prev <= 0;

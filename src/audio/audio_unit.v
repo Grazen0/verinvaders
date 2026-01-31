@@ -6,7 +6,7 @@ module audio_unit #(
     parameter CLK_FREQ = 100_000_000
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [31:0] fleet_period,
     input wire        play_ufo,
@@ -27,7 +27,7 @@ module audio_unit #(
 
   square_wave_generator fleet_wave_generator (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .period(fleet_period),
       .out   (fleet_square)
@@ -41,7 +41,7 @@ module audio_unit #(
       .LOOP(1)
   ) ufo_player (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .play(play_ufo),
       .stop(stop_ufo),
@@ -55,7 +55,7 @@ module audio_unit #(
       .SAMPLE_FREQ(SAMPLE_FREQ)
   ) shoot_player (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .play(play_shoot),
       .stop(1'b0),
@@ -69,7 +69,7 @@ module audio_unit #(
       .SAMPLE_FREQ(SAMPLE_FREQ)
   ) player_hit_player (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .play(play_player_hit),
       .stop(1'b0),
@@ -83,7 +83,7 @@ module audio_unit #(
       .SAMPLE_FREQ(SAMPLE_FREQ)
   ) alien_hit_player (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .play(play_alien_hit),
       .stop(1'b0),
@@ -97,7 +97,7 @@ module audio_unit #(
       .SAMPLE_FREQ(SAMPLE_FREQ)
   ) ufo_hit_player (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .play(play_ufo_hit),
       .stop(1'b0),
@@ -128,7 +128,7 @@ module audio_unit #(
       .DUTY_WIDTH(10)
   ) pwm_gen (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .duty(pwm_duty),
       .out (out)

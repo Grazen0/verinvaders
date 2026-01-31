@@ -5,7 +5,7 @@
 
 module cpm (
     input wire clk,
-    input wire rst_n
+    input wire rst
 );
   localparam XLEN = 8;
 
@@ -40,7 +40,7 @@ module cpm (
       .XLEN(XLEN)
   ) i8080 (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .ready(1'b1),
       .iint (1'b0),
@@ -57,7 +57,7 @@ module cpm (
 
   register status_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(sync),
 

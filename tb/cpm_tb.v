@@ -1,12 +1,12 @@
 `default_nettype none `timescale 1ns / 1ps
 
 module cpm_tb ();
-  reg clk, rst_n;
+  reg clk, rst;
   always #5 clk = ~clk;
 
   cpm cpm (
-      .clk  (clk),
-      .rst_n(rst_n)
+      .clk(clk),
+      .rst(rst)
   );
 
   wire [15:0] pc = cpm.i8080.adr_reg.data;
@@ -57,11 +57,11 @@ module cpm_tb ();
   initial begin
     $dumpvars(0, cpm_tb);
 
-    step  = 0;
+    step = 0;
 
-    clk   = 1;
-    rst_n = 0;
+    clk  = 1;
+    rst  = 1;
 
-    #500 rst_n = 1;
+    #500 rst = 0;
   end
 endmodule

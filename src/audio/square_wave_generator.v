@@ -4,7 +4,7 @@ module square_wave_generator #(
     parameter PERIOD_WIDTH = 32
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input  wire [PERIOD_WIDTH-1:0] period,
     output wire                    out
@@ -14,8 +14,8 @@ module square_wave_generator #(
   counter #(
       .WIDTH(PERIOD_WIDTH)
   ) counter (
-      .clk  (clk),
-      .rst_n(rst_n),
+      .clk(clk),
+      .rst(rst),
 
       .enable(1'b1),
       .cmp   (period),

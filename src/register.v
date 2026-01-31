@@ -5,7 +5,7 @@ module register #(
     parameter RESET_VALUE = {WIDTH{1'bx}}
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input  wire             wenable,
     input  wire [WIDTH-1:0] in,
@@ -14,7 +14,7 @@ module register #(
   reg [WIDTH-1:0] data;
 
   always @(posedge clk) begin
-    if (!rst_n) data <= RESET_VALUE;
+    if (rst) data <= RESET_VALUE;
     else if (wenable) data <= in;
   end
 

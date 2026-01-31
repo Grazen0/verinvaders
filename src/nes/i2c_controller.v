@@ -6,7 +6,7 @@ module i2c_controller #(
     parameter SCL_PERIOD = 500
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [1:0] cmd,
     input wire       start,
@@ -243,7 +243,7 @@ module i2c_controller #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       scl_reg     <= 1;
       sda_reg     <= 1;
       rdata       <= 0;

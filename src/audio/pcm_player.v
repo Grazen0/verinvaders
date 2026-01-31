@@ -9,7 +9,7 @@ module pcm_player #(
     parameter LOOP = 0
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire play,
     input wire stop,
@@ -21,8 +21,8 @@ module pcm_player #(
   wire counter_tc;
 
   counter counter (
-      .clk  (clk),
-      .rst_n(rst_n),
+      .clk(clk),
+      .rst(rst),
 
       .enable(playing),
       .cmp   (CLK_FREQ / SAMPLE_FREQ),
@@ -57,7 +57,7 @@ module pcm_player #(
   end
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       playing <= 0;
       sc      <= 0;
     end else begin

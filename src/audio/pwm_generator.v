@@ -4,7 +4,7 @@ module pwm_generator #(
     parameter DUTY_WIDTH = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input wire [DUTY_WIDTH-1:0] duty,
     output wire out
@@ -12,7 +12,7 @@ module pwm_generator #(
   reg [DUTY_WIDTH-1:0] counter;
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       counter <= 0;
     end else begin
       counter <= counter + 1;

@@ -5,7 +5,7 @@ module synchronizer #(
     parameter RESET_VALUE = 1'b0
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     input  wire in,
     output wire out
@@ -15,7 +15,7 @@ module synchronizer #(
   integer i;
 
   always @(posedge clk) begin
-    if (!rst_n) begin
+    if (rst) begin
       for (i = 0; i < STAGES; i = i + 1) begin
         stages[i] <= RESET_VALUE;
       end

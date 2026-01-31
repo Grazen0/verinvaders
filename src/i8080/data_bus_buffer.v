@@ -4,7 +4,7 @@ module data_bus_buffer #(
     parameter XLEN = 8
 ) (
     input wire clk,
-    input wire rst_n,
+    input wire rst,
 
     inout wire [XLEN-1:0] bus,
     input wire            sync,
@@ -24,7 +24,7 @@ module data_bus_buffer #(
       .WIDTH(XLEN)
   ) out_data_reg (
       .clk  (clk),
-      .rst_n(rst_n),
+      .rst(rst),
 
       .wenable(out_wenable),
       .in     (bus),
