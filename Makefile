@@ -2,12 +2,15 @@ BUILD_DIR := ./build
 
 SRC_DIR := ./src
 TB_DIR := ./tb
+PCM_DIR := ./data/pcm
 
-SRCS = $(shell find $(SRC_DIR) -name '*.v')
-TBS = $(shell find $(TB_DIR) -name '*.v')
+SRCS := $(shell find $(SRC_DIR) -name '*.v')
+TBS := $(shell find $(TB_DIR) -name '*.v')
+PCMS := $(shell find $(PCM_DIR) -name '*.pcm')
 
 TARGETS := $(patsubst $(TB_DIR)/%.v,$(BUILD_DIR)/%.out,$(TBS))
 VCD_DUMPS := $(patsubst $(TB_DIR)/%.v,$(BUILD_DIR)/%.vcd,$(TBS))
+PCM_TARGETS := $(patsubst $(PCM_DIR)/%.pcm,$(BUILD_DIR)/pcm/%.mem,$(PCMS))
 
 BIN_SRC := ./data/invaders
 BIN_TARGET := invaders.mem
@@ -17,18 +20,22 @@ INC_FLAGS := $(addprefix -I,$(INC_DIRS))
 
 override IVERILOG_FLAGS += -DIVERILOG -Wall -g2001
 
-.PHONY: all clean run wave
+.PHONY: all clean run wave debug
 
 all: $(TARGETS)
 
 clean:
 	rm -rf $(BUILD_DIR)
 
+$(BUILD_DIR)/pcm/%.mem: $(PCM_DIR)/%.pcm
+	mkdir -p $(dir $@)
+	xxd -p -c1 $< > $@
+
 $(BUILD_DIR)/$(BIN_TARGET): $(BIN_SRC)
 	mkdir -p $(dir $@)
 	xxd -p -c1 $< > $@
 
-$(BUILD_DIR)/%.out: $(TB_DIR)/%.v $(SRCS) $(BUILD_DIR)/$(BIN_TARGET)
+$(BUILD_DIR)/%.out: $(TB_DIR)/%.v $(SRCS) $(BUILD_DIR)/$(BIN_TARGET) $(PCM_TARGETS)
 	mkdir -p $(dir $@)
 	iverilog $(INC_FLAGS) $(IVERILOG_FLAGS) -o $@ $< $(SRCS) 
 

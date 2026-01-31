@@ -4,6 +4,9 @@
 `include "compat.vh"
 `include "nes_bridge.vh"
 
+`define AUDIO_CLK_FREQ 32'd100_000_000
+`define FREQ_TO_PERIOD(freq) (`AUDIO_CLK_FREQ / (freq))
+
 `define INP0_SELF_TEST 0
 
 `define INP1_COIN 0
@@ -24,6 +27,7 @@
 module invaders (
     input wire clk,
     input wire vga_clk,
+    input wire audio_clk,
     input wire rst_n,
 
     input wire [4:0] dip,
@@ -36,10 +40,13 @@ module invaders (
     output wire [3:0] vga_green,
     output wire [3:0] vga_blue,
     output wire h_sync,
-    output wire v_sync
+    output wire v_sync,
+
+    output wire audio_out
 );
   localparam XLEN = 8;
   localparam ZZ = {XLEN{1'bz}};
+  localparam AUDIO_CLK_FREQ = 100_000_000;
 
   wire [2*XLEN-1:0] addr;
   wire [XLEN-1:0] io_addr = addr[XLEN-1:0];
@@ -134,7 +141,7 @@ module invaders (
       .clk  (clk),
       .rst_n(rst_n),
 
-      .wenable(write_io & (io_addr <= 8'h02)),
+      .wenable(write_io & io_addr <= 8'h02),
 
       .in (data[SHIFT_AMOUNT_WIDTH-1:0]),
       .out(shift_amount)
@@ -149,7 +156,7 @@ module invaders (
       .rst_n(rst_n),
 
       .wdata       (data),
-      .wenable     (write_io & (io_addr == 8'h04)),
+      .wenable     (write_io & io_addr == 8'h04),
       .shift_amount(shift_amount),
       .shift_result(shift_result)
   );
@@ -244,8 +251,88 @@ module invaders (
       .rst_n(rst_n),
 
       .wenable(joypad_valid),
+      .in     (~joypad),
+      .out    (joypad_data)
+  );
 
-      .in (~joypad),
-      .out(joypad_data)
+  wire [3:0] snd_5;
+
+  register #(
+      .WIDTH(4),
+      .RESET_VALUE(4'h0)
+  ) snd_5_reg (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .wenable(write_io & io_addr == 8'h05),
+      .in     (data[3:0]),
+      .out    (snd_5)
+  );
+
+  reg [31:0] fleet_snd_period;
+
+  always @(*) begin
+    casez (snd_5)
+      4'bzzz1: fleet_snd_period = `FREQ_TO_PERIOD(69);  // C#2
+      4'bzz10: fleet_snd_period = `FREQ_TO_PERIOD(61);  // B1
+      4'bz100: fleet_snd_period = `FREQ_TO_PERIOD(55);  // A1
+      4'b1000: fleet_snd_period = `FREQ_TO_PERIOD(52);  // G#1
+      default: fleet_snd_period = 32'h0000_0000;
+    endcase
+  end
+
+  wire [3:0] snd_3_posedge;
+  wire ufo_hit_posedge;
+  wire ufo_negedge;
+
+  edge_detector #(
+      .WIDTH(4)
+  ) snd_3_edge_detector (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .enable(write_io & io_addr == 8'h03),
+      .in    (data[3:0]),
+      .out   (snd_3_posedge)
+  );
+
+  edge_detector #(
+      .WIDTH  (1),
+      .NEGEDGE(1)
+  ) ufo_negedge_detector (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .enable(write_io & io_addr == 8'h03),
+      .in    (data[0]),
+      .out   (ufo_negedge)
+  );
+
+  edge_detector #(
+      .WIDTH(1)
+  ) ufo_hit_edge_detector (
+      .clk  (clk),
+      .rst_n(rst_n),
+
+      .enable(write_io & io_addr == 8'h05),
+      .in    (data[4]),
+      .out   (ufo_hit_posedge)
+  );
+
+  audio_unit #(
+      .CLK_FREQ(AUDIO_CLK_FREQ)
+  ) audio_unit (
+      .clk  (audio_clk),
+      .rst_n(rst_n),
+
+      .fleet_period   (fleet_snd_period),
+      .play_ufo       (snd_3_posedge[0]),
+      .stop_ufo       (ufo_negedge),
+      .play_shoot     (snd_3_posedge[1]),
+      .play_player_hit(snd_3_posedge[2]),
+      .play_alien_hit (snd_3_posedge[3]),
+      .play_ufo_hit   (ufo_hit_posedge),
+
+      .out(audio_out)
   );
 endmodule

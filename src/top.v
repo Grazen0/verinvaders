@@ -1,5 +1,7 @@
 `default_nettype none `timescale 1ns / 1ps
 
+`include "compat.vh"
+
 module top (
     input wire clk,
     input wire rst,
@@ -13,7 +15,9 @@ module top (
     output wire [3:0] vga_green,
     output wire [3:0] vga_blue,
     output wire h_sync,
-    output wire v_sync
+    output wire v_sync,
+
+    output wire audio_out
 );
   wire sys_clk;
 
@@ -55,9 +59,10 @@ module top (
   wire joypad_sda_out;
 
   invaders invaders (
-      .clk    (sys_clk),
-      .vga_clk(vga_clk),
-      .rst_n  (~rst),
+      .clk      (sys_clk),
+      .vga_clk  (vga_clk),
+      .audio_clk(clk),
+      .rst_n    (~rst),
 
       .dip(dip),
 
@@ -69,7 +74,9 @@ module top (
       .vga_green(vga_green),
       .vga_blue (vga_blue),
       .h_sync   (h_sync),
-      .v_sync   (v_sync)
+      .v_sync   (v_sync),
+
+      .audio_out(audio_out)
   );
 
   assign joypad_scl_pin = ~joypad_scl_out ? 1'b0 : 1'bz;

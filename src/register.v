@@ -7,8 +7,7 @@ module register #(
     input wire clk,
     input wire rst_n,
 
-    input wire wenable,
-
+    input  wire             wenable,
     input  wire [WIDTH-1:0] in,
     output wire [WIDTH-1:0] out
 );

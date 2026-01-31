@@ -74,8 +74,8 @@ set_property -dict { PACKAGE_PIN U18   IOSTANDARD LVCMOS33 } [get_ports rst]
 ##Pmod Header JA
 set_property -dict { PACKAGE_PIN J1   IOSTANDARD LVCMOS33 } [get_ports {joypad_scl_pin}];#Sch name = JA1
 set_property -dict { PACKAGE_PIN L2   IOSTANDARD LVCMOS33 } [get_ports {joypad_sda_pin}];#Sch name = JA2
-#set_property -dict { PACKAGE_PIN J2   IOSTANDARD LVCMOS33   PULLUP true } [get_ports {sd_miso}];#Sch name = JA3
-#set_property -dict { PACKAGE_PIN G2   IOSTANDARD LVCMOS33 } [get_ports {sd_mosi}];#Sch name = JA4
+set_property -dict { PACKAGE_PIN J2   IOSTANDARD LVCMOS33 } [get_ports {audio_out}];#Sch name = JA3
+#set_property -dict { PACKAGE_PIN G2   IOSTANDARD LVCMOS33 } [get_ports {JA[5]}];#Sch name = JA4
 #set_property -dict { PACKAGE_PIN H1   IOSTANDARD LVCMOS33 } [get_ports {JA[4]}];#Sch name = JA7
 #set_property -dict { PACKAGE_PIN K2   IOSTANDARD LVCMOS33 } [get_ports {JA[5]}];#Sch name = JA8
 #set_property -dict { PACKAGE_PIN H2   IOSTANDARD LVCMOS33 } [get_ports {JA[6]}];#Sch name = JA9
