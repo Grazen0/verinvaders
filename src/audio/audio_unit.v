@@ -18,11 +18,12 @@ module audio_unit #(
 
     output wire out
 );
+  localparam CHNL_WIDTH = 8;
   localparam SAMPLE_FREQ = 8000;
 
   wire fleet_square;
-  wire [7:0] ufo_chnl, shoot_chnl, player_hit_chnl, alien_hit_chnl, ufo_hit_chnl;
-  wire [7:0] fleet_chnl = fleet_square ? 8'hFF : 8'h00;
+  wire [CHNL_WIDTH-1:0] ufo_chnl, shoot_chnl, player_hit_chnl, alien_hit_chnl, ufo_hit_chnl;
+  wire [CHNL_WIDTH-1:0] fleet_chnl = fleet_square ? 8'hFF : 8'h00;
 
   square_wave_generator fleet_wave_generator (
       .clk  (clk),
@@ -103,9 +104,14 @@ module audio_unit #(
       .out (ufo_hit_chnl)
   );
 
-  wire [8:0] pwm_duty;
+  localparam MIXER_N = 1;
+  wire [CHNL_WIDTH-MIXER_N+2:0] pwm_duty;
 
-  audio_mixer mixer (
+  audio_mixer #(
+      .WIDTH(CHNL_WIDTH),
+      .N(MIXER_N)
+  ) mixer (
+      // 2 channels to give more volume to fleet
       .channel_1(fleet_chnl),
       .channel_2(fleet_chnl),
       .channel_3(ufo_chnl),
@@ -113,13 +119,13 @@ module audio_unit #(
       .channel_5(player_hit_chnl),
       .channel_6(alien_hit_chnl),
       .channel_7(ufo_hit_chnl),
-      .channel_8(8'h00),
+      .channel_8({CHNL_WIDTH{1'b0}}),
 
       .out(pwm_duty)
   );
 
   pwm_generator #(
-      .DUTY_WIDTH(9)
+      .DUTY_WIDTH(10)
   ) pwm_gen (
       .clk  (clk),
       .rst_n(rst_n),

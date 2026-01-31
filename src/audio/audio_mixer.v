@@ -2,7 +2,7 @@
 
 module audio_mixer #(
     parameter WIDTH = 8,
-    parameter N = 2
+    parameter N = 0
 ) (
     input wire [WIDTH-1:0] channel_1,
     input wire [WIDTH-1:0] channel_2,
