@@ -96,7 +96,7 @@ module invaders (
   i8080 #(
       .XLEN(XLEN)
   ) i8080 (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .ready(1'b1),
@@ -116,7 +116,7 @@ module invaders (
   wire [XLEN-1:0] status;
 
   register status_reg (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .wenable(sync),
@@ -138,7 +138,7 @@ module invaders (
   register #(
       .WIDTH(SHIFT_AMOUNT_WIDTH)
   ) shift_amount_reg (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .wenable(write_io & io_addr <= 8'h02),
@@ -152,7 +152,7 @@ module invaders (
   shift_register #(
       .XLEN(XLEN)
   ) shift_register (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .wdata       (data),
@@ -206,7 +206,7 @@ module invaders (
       .RAM_SIZE(RAM_SIZE),
       .XLEN(XLEN)
   ) video_unit (
-      .clk  (vga_clk),
+      .clk(vga_clk),
       .rst(rst),
 
       .ram_addr(video_ram_addr),
@@ -229,7 +229,7 @@ module invaders (
   nes_bridge #(
       .SCL_PERIOD(20)  // 100 KHz assuming 2 MHz clk
   ) nes_bridge (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .ready       (nes_ready),
@@ -247,7 +247,7 @@ module invaders (
   register #(
       .RESET_VALUE(8'h00)
   ) joypad_reg (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .wenable(joypad_valid),
@@ -261,7 +261,7 @@ module invaders (
       .WIDTH(4),
       .RESET_VALUE(4'h0)
   ) snd_5_reg (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .wenable(write_io & io_addr == 8'h05),
@@ -273,10 +273,10 @@ module invaders (
 
   always @(*) begin
     casez (snd_5)
-      4'bzzz1: fleet_snd_period = `FREQ_TO_PERIOD(69);  // C#2
-      4'bzz10: fleet_snd_period = `FREQ_TO_PERIOD(61);  // B1
-      4'bz100: fleet_snd_period = `FREQ_TO_PERIOD(55);  // A1
-      4'b1000: fleet_snd_period = `FREQ_TO_PERIOD(52);  // G#1
+      4'b???1: fleet_snd_period = `FREQ_TO_PERIOD(69);  // C#2
+      4'b??1?: fleet_snd_period = `FREQ_TO_PERIOD(61);  // B1
+      4'b?1??: fleet_snd_period = `FREQ_TO_PERIOD(55);  // A1
+      4'b1???: fleet_snd_period = `FREQ_TO_PERIOD(52);  // G#1
       default: fleet_snd_period = 32'h0000_0000;
     endcase
   end
@@ -288,7 +288,7 @@ module invaders (
   edge_detector #(
       .WIDTH(4)
   ) snd_3_edge_detector (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .enable(write_io & io_addr == 8'h03),
@@ -300,7 +300,7 @@ module invaders (
       .WIDTH  (1),
       .NEGEDGE(1)
   ) ufo_negedge_detector (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .enable(write_io & io_addr == 8'h03),
@@ -311,7 +311,7 @@ module invaders (
   edge_detector #(
       .WIDTH(1)
   ) ufo_hit_edge_detector (
-      .clk  (clk),
+      .clk(clk),
       .rst(rst),
 
       .enable(write_io & io_addr == 8'h05),
@@ -322,7 +322,7 @@ module invaders (
   audio_unit #(
       .CLK_FREQ(AUDIO_CLK_FREQ)
   ) audio_unit (
-      .clk  (audio_clk),
+      .clk(audio_clk),
       .rst(rst),
 
       .fleet_period   (fleet_snd_period),
