@@ -2,35 +2,83 @@
 
 `include "i8080.vh"
 
+module bit_adder (
+    input wire a,
+    input wire b,
+    input wire c_in,
+    input wire sub,
+
+    output wire s,
+    output wire c_out
+);
+  wire a_c = a ^ sub;
+
+  assign s = a ^ b ^ c_in;
+  assign c_out = (a_c & b) | (a_c & c_in) | (b & c_in);
+endmodule
+
+module adder #(
+    parameter XLEN = 8
+) (
+    input wire [XLEN-1:0] a,
+    input wire [XLEN-1:0] b,
+    input wire c_in,
+    input wire sub,
+
+    output wire [XLEN-1:0] result,
+    output wire c_aux,
+    output wire c_out
+);
+  wire [XLEN:0] carries;
+
+  genvar i;
+
+  generate
+    for (i = 0; i < XLEN; i = i + 1) begin : g_adder
+      bit_adder bit_adder (
+          .a   (a[i]),
+          .b   (b[i]),
+          .c_in(carries[i]),
+          .sub (sub),
+
+          .s    (result[i]),
+          .c_out(carries[i+1])
+      );
+    end
+  endgenerate
+
+  assign carries[0] = c_in;
+  assign c_out      = carries[XLEN];
+  assign c_aux      = carries[XLEN/2];
+endmodule
+
 module alu #(
     parameter XLEN = 8
 ) (
     input wire [XLEN-1:0] op_a,
     input wire [XLEN-1:0] op_b,
-    input wire [4:0] control,
+    input wire [     4:0] control,
     input wire [XLEN-1:0] flags_in,
 
     output reg [XLEN-1:0] out,
     output reg [XLEN-1:0] flags_out
 );
-  wire            carry_in = ~control[2] & control[0] & flags_in[`FC];
+  wire [XLEN-1:0] sum;
+  wire            sum_carry;
+  wire            sum_carry_aux;
 
-  wire [  XLEN:0] op_a_ext = {1'b0, op_a};
-  wire [  XLEN:0] op_b_ext = {1'b0, op_b};
-  wire [  XLEN:0] carry_ext = {{(XLEN) {1'b0}}, carry_in};
+  adder #(
+      .XLEN(XLEN)
+  ) adder (
+      .op_a(op_a),
+      .op_b(op_b),
+      .c_in(~control[2] & control[0] & flags_in[`FC]),
+      .sub (control[1]),
 
-  wire [  XLEN:0] op_b_ext_signed = control[1] ? -op_b_ext : op_b_ext;
-  wire [  XLEN:0] carry_ext_signed = control[1] ? -carry_ext : carry_ext;
-
-  wire [XLEN/2:0] op_a_d0 = {1'b0, op_a[XLEN/2-1:0]};
-  wire [XLEN/2:0] op_b_d0 = {1'b0, op_b[XLEN/2-1:0]};
-  wire [XLEN/2:0] op_b_d0_signed = control[1] ? -op_b_d0 : op_b_d0;
-
-  // TODO: remove unnecessary extra sum just for the aux carry
-  wire [XLEN/2:0] aux_sum = op_a_d0 + op_b_d0_signed + carry_ext_signed[XLEN/2:0];
-  wire [  XLEN:0] sum = op_a_ext + op_b_ext_signed + carry_ext_signed;
-
-  reg             set_pzs_flags;
+      .result(sum),
+      .c_out (sum_carry),
+      .c_aux (sum_carry_aux)
+  );
 
   wire [XLEN-1:0] daa_flags_out;
   wire [XLEN-1:0] daa_out;
@@ -45,15 +93,18 @@ module alu #(
       .flags_out(daa_flags_out)
   );
 
+  reg set_pzs_flags;
+
   always @(*) begin
-    flags_out = flags_in;
+    flags_out     = flags_in;
     set_pzs_flags = 0;
 
     casez (control)
-      5'b00_0zz, 5'b00_111: begin  // add/adc/sbb/sbc
-        {flags_out[`FC], out} = sum;
-        flags_out[`FA]        = aux_sum[XLEN/2];
-        set_pzs_flags         = 1;
+      5'b00_0??, 5'b00_111: begin  // add/adc/sbb/sbc
+        out            = sum;
+        flags_out[`FC] = sum_carry;
+        flags_out[`FA] = sum_carry_aux;
+        set_pzs_flags  = 1;
       end
       5'b00_100: begin  // ana
         out            = op_a & op_b;
@@ -97,16 +148,19 @@ module alu #(
         flags_out[`FC] = ~flags_out[`FC];
       end
 
-      5'b10_zz0: begin  // inr
+      5'b10_??0: begin  // inr
         out           = op_b + 1;
         set_pzs_flags = 1;
       end
-      5'b10_zz1: begin  // dcr
+      5'b10_??1: begin  // dcr
         out           = op_b - 1;
         set_pzs_flags = 1;
       end
 
-      5'b11_zzz: {flags_out[`FC], out} = sum;  // add but only set carry, used for dad
+      5'b11_???: begin  // add/sub but only set carry, used for dad
+        out = sum;
+        flags_out[`FC] = sum_carry;
+      end
 
       default: out = {XLEN{1'bx}};
     endcase
